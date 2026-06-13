@@ -49,3 +49,15 @@ def test_replay_endpoint_returns_persisted_steps(tmp_path):
     body = resp.json()
     assert body["run_id"] == run_id
     assert len(body["steps"]) >= 1
+
+
+def test_ws_reset_starts_fresh():
+    client = TestClient(create_app())
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"type": "observe", "state": _state(2)})
+        ws.receive_json()
+        ws.send_json({"type": "reset"})
+        assert ws.receive_json() == {"type": "reset_ok"}
+        ws.send_json({"type": "observe", "state": _state(0)})
+        out = ws.receive_json()
+        assert out["type"] == "act" and out["checkpoints"] == []  # fresh session

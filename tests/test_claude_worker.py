@@ -52,3 +52,9 @@ def test_claude_worker_sends_frame_as_image():
     assert isinstance(content, list)
     image = next(b for b in content if b.get("type") == "image")
     assert image["source"]["data"] == "AAAABBBB"  # base64 prefix stripped
+
+
+def test_claude_worker_text_only_without_frame():
+    fake = FakeClient('{"buttons": ["DROP"], "hold_frames": 4}')
+    ClaudeWorker(client=fake).decide(GameState(0), feedback=None)
+    assert isinstance(fake.last_kwargs["messages"][0]["content"], str)  # no frame -> text-only

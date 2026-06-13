@@ -35,3 +35,19 @@ def test_run_is_replayable():
     loop = HarnessLoop(FakeTetrisAdapter(), ScriptedWorker())
     loop.run(max_steps=10)
     assert len(loop.material.replay(loop.run_id)) >= 1
+
+
+class _FlakyWorker:
+    name = "flaky"
+
+    def decide(self, state, feedback):
+        # illegal first (no feedback), legal once the guardrail feedback arrives
+        return Action(("DROP",), 4) if feedback else Action(("LEFT", "RIGHT"), 4)
+
+
+def test_guardrail_retry_then_succeed():
+    loop = HarnessLoop(FakeTetrisAdapter(), _FlakyWorker())
+    loop.step()
+    assert loop.status == "RUNNING"
+    assert any(a.type == "GUARDRAIL_BLOCKED" for a in loop.alarms.history)
+    assert not any(a.type == "GUARDRAIL_DEADLOCK" for a in loop.alarms.history)
