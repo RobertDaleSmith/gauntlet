@@ -82,7 +82,7 @@ class MaterialHandler:
         """Return every persisted checkpoint for a run, in order."""
         rows = self.conn.execute(
             "SELECT frame, action, state, results FROM checkpoints "
-            "WHERE run_id = ? ORDER BY frame ASC",
+            "WHERE run_id = ? ORDER BY frame ASC, id ASC",
             (run_id,),
         ).fetchall()
         return [

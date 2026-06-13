@@ -28,6 +28,7 @@
       this.score = 0;
       this.lines = 0;
       this.level = 1;
+      this.frame = 0;
       this.gameOver = false;
       this.nextType = randType();
       this._spawn();
@@ -91,6 +92,7 @@
 
     tick() {
       if (this.gameOver) return;
+      this.frame++;
       if (!this._collides(this.cur.cells, this.cur.x, this.cur.y + 1)) this.cur.y++;
       else this._lock();
     }
@@ -149,6 +151,7 @@
           cells: this.cur.cells.map(({ r, c }) => [this.cur.y + r, this.cur.x + c]),
         },
         next: this.nextType,
+        frame: this.frame,
         score: this.score,
         lines: this.lines,
         level: this.level,

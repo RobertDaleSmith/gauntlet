@@ -29,3 +29,11 @@ def test_load_state_at_frame():
     m = MaterialHandler()
     m.persist("run1", 8, Action(("DROP",), 4), GameState(8, stack_height=9), [])
     assert m.load_state("run1", 8).stack_height == 9
+
+
+def test_replay_orders_by_insertion_when_frames_tie():
+    m = MaterialHandler()
+    for h in (5, 3, 9):
+        m.persist("r", 0, Action(("DROP",), 4), GameState(0, stack_height=h), [])
+    heights = [row["state"]["stack_height"] for row in m.replay("r")]
+    assert heights == [5, 3, 9]  # insertion order preserved despite tied frames
