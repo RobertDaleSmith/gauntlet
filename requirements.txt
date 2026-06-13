@@ -1,0 +1,7 @@
+# Core harness uses only the Python stdlib (sqlite3) — tests run with just pytest.
+pytest
+
+# Server + Claude worker (needed once that work begins):
+fastapi
+uvicorn[standard]
+anthropic

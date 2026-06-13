@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Gauntlet — Joypad Harness</title>
+  <style>
+    body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background:#0a0a0a; color:#eee; }
+    .wrap { display: grid; grid-template-columns: 1fr 1fr; height: 100vh; }
+    .game, .feed { padding: 16px; overflow:auto; }
+    .game { border-right: 1px solid #2a2a2a; display:flex; align-items:center; justify-content:center; }
+    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .1em; color:#888; }
+    .pass { color:#34D399; } .fail { color:#FF4D4D; } .alarm { color:#FFB020; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="game">
+      <!-- TODO(ralph): mount jsnes canvas here; load a Mario ROM -->
+      <div>🎮 game canvas (jsnes) — TODO</div>
+    </div>
+    <div class="feed">
+      <h2>Worker</h2><div id="worker">—</div>
+      <h2>Agent intent</h2><div id="intent">—</div>
+      <h2>Checkpoints</h2><div id="checkpoints">—</div>
+      <h2>Alarms</h2><div id="alarms">—</div>
+      <h2>Guardrails</h2><div id="guardrails">—</div>
+    </div>
+  </div>
+  <script>
+    // TODO(ralph): open WebSocket to /ws, render the live event feed.
+  </script>
+</body>
+</html>
