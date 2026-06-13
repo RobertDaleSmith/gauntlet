@@ -8,7 +8,26 @@ replays a persisted run.
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
+
+
+def _load_dotenv() -> None:
+    """Load KEY=VALUE lines from a repo-root .env into the environment.
+
+    Lets the vision worker pick up ANTHROPIC_API_KEY without exporting it in the
+    shell that launches the server. Existing env vars win (setdefault).
+    """
+    env = Path(__file__).resolve().parent.parent / ".env"
+    if not env.exists():
+        return
+    for line in env.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, v = line.split("=", 1)
+        os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+
 
 try:
     from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -38,6 +57,8 @@ def _make_worker(name: str):
 def create_app():
     if FastAPI is None:
         raise RuntimeError("fastapi not installed — pip install -r requirements.txt")
+
+    _load_dotenv()  # pick up ANTHROPIC_API_KEY from .env if present
 
     from harness.material import MaterialHandler
     from harness.session import HarnessSession
