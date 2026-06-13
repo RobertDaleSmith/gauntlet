@@ -31,15 +31,19 @@ def test_ws_worker_swap():
     client = TestClient(create_app())
     with client.websocket_connect("/ws") as ws:
         ws.send_json({"type": "set_worker", "worker": "scripted"})
-        assert ws.receive_json() == {"type": "worker_set", "worker": "scripted", "model": None}
+        assert ws.receive_json() == {
+            "type": "worker_set", "worker": "scripted", "model": None, "perception": None
+        }
 
 
-def test_ws_set_claude_model():
+def test_ws_set_claude_model_and_perception():
     client = TestClient(create_app())
     with client.websocket_connect("/ws") as ws:
-        ws.send_json({"type": "set_worker", "worker": "claude", "model": "claude-opus-4-8"})
+        ws.send_json({"type": "set_worker", "worker": "claude",
+                      "model": "claude-opus-4-8", "perception": "text"})
         assert ws.receive_json() == {
-            "type": "worker_set", "worker": "claude", "model": "claude-opus-4-8"
+            "type": "worker_set", "worker": "claude",
+            "model": "claude-opus-4-8", "perception": "text",
         }
 
 

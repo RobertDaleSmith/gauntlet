@@ -17,13 +17,15 @@ from workers.heuristic import HeuristicWorker
 
 class HarnessSession:
     def __init__(self, worker=None, db_path: str = ":memory:") -> None:
-        # Default to the competent worker so "Start" plays well out of the box;
-        # the reckless ScriptedWorker is an explicit choice (demos escalation).
+        # Default to the competent worker so "Start" plays well out of the box.
+        # Recovery worker (heuristic) is on by default: if the primary agent gets
+        # stuck, the harness hands off to it, then hands back — see HarnessLoop.
         self.loop = HarnessLoop(
             NullAdapter(),
             worker or HeuristicWorker(),
             material=MaterialHandler(db_path),
             alarms=AlarmBus(),
+            recovery_worker=HeuristicWorker(),
         )
         self._events = []
         self.loop.alarms.subscribe(self._events.append)
@@ -32,7 +34,10 @@ class HarnessSession:
         self.last_frame = None
 
     def set_worker(self, worker) -> None:
-        self.loop.worker = worker
+        self.loop.set_primary(worker)
+
+    def set_recovery(self, on: bool) -> None:
+        self.loop.recovery_worker = HeuristicWorker() if on else None
 
     def _drain(self) -> list[dict]:
         evs = [a.to_dict() for a in self._events]
@@ -87,6 +92,7 @@ class HarnessSession:
             "run_id": self.loop.run_id,
             "worker": self.loop.worker.name,
             "model": getattr(self.loop.worker, "model", None),
+            "perception": getattr(self.loop.worker, "perception", None),
             "action": {"buttons": list(action.buttons), "hold_frames": action.hold_frames},
             "checkpoints": checkpoints,
             "alarms": self._drain(),

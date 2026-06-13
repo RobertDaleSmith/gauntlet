@@ -43,9 +43,9 @@ def test_claude_worker_uses_haiku_and_passes_feedback():
     assert "hello-feedback" in str(fake.last_kwargs["messages"])
 
 
-def test_claude_worker_sends_frame_as_image():
+def test_claude_vision_mode_sends_frame_as_image():
     fake = FakeClient('{"buttons": ["DROP"], "hold_frames": 4}')
-    w = ClaudeWorker(client=fake)
+    w = ClaudeWorker(client=fake, perception="vision")
     w.set_frame("data:image/png;base64,AAAABBBB")  # the rendered frame
     w.decide(GameState(0), feedback=None)
     content = fake.last_kwargs["messages"][0]["content"]
@@ -54,7 +54,12 @@ def test_claude_worker_sends_frame_as_image():
     assert image["source"]["data"] == "AAAABBBB"  # base64 prefix stripped
 
 
-def test_claude_worker_text_only_without_frame():
-    fake = FakeClient('{"buttons": ["DROP"], "hold_frames": 4}')
-    ClaudeWorker(client=fake).decide(GameState(0), feedback=None)
-    assert isinstance(fake.last_kwargs["messages"][0]["content"], str)  # no frame -> text-only
+def test_claude_text_mode_renders_ascii_board():
+    fake = FakeClient('{"buttons": ["LEFT", "DROP"], "hold_frames": 4}')
+    board = [[0] * 10 for _ in range(20)]
+    board[19][0] = 1  # one filled cell, bottom-left
+    state = GameState(0, raw={"board": board, "current": {"cells": [[0, 4]]}, "next": "I"})
+    ClaudeWorker(client=fake, perception="text").decide(state, feedback=None)
+    content = fake.last_kwargs["messages"][0]["content"]
+    assert isinstance(content, str)
+    assert "#" in content and "@" in content and "next piece: I" in content

@@ -40,13 +40,13 @@ STATIC = Path(__file__).parent / "static"
 DB_PATH = str(Path(__file__).resolve().parent.parent / ".runs.db")
 
 
-def _make_worker(name: str, model: str | None = None):
+def _make_worker(name: str, model: str | None = None, perception: str | None = None):
     from workers.scripted import ScriptedWorker
 
     if name == "claude":
         from workers.claude import MODEL, ClaudeWorker
 
-        return ClaudeWorker(model=model or MODEL)
+        return ClaudeWorker(model=model or MODEL, perception=perception or "text")
     if name == "heuristic":
         from workers.heuristic import HeuristicWorker
 
@@ -82,16 +82,20 @@ def create_app():
                     out = session.step(msg.get("state", {}), msg.get("frame"))
                     await socket.send_json(out)
                 elif kind == "set_worker":
-                    session.set_worker(
-                        _make_worker(msg.get("worker", "scripted"), msg.get("model"))
-                    )
+                    session.set_worker(_make_worker(
+                        msg.get("worker", "scripted"), msg.get("model"), msg.get("perception")
+                    ))
                     await socket.send_json({
                         "type": "worker_set",
                         "worker": msg.get("worker"),
                         "model": msg.get("model"),
+                        "perception": msg.get("perception"),
                     })
+                elif kind == "set_recovery":
+                    session.set_recovery(bool(msg.get("on", True)))
+                    await socket.send_json({"type": "recovery_set", "on": bool(msg.get("on", True))})
                 elif kind == "reset":
-                    session = HarnessSession(session.loop.worker, db_path=DB_PATH)
+                    session = HarnessSession(session.loop.primary_worker, db_path=DB_PATH)
                     await socket.send_json({"type": "reset_ok"})
         except WebSocketDisconnect:
             return

@@ -45,10 +45,16 @@ class HarnessLoop:
         max_guardrail_retries: int = 3,
         escalate_after: int = 2,
         escalation_checkpoint: str | None = None,
+        recovery_worker: Worker | None = None,
         run_id: str | None = None,
     ) -> None:
         self.adapter = adapter
         self.worker = worker
+        # Dual-worker setup: a primary agent drives; if it gets stuck, the harness
+        # hands off to a recovery worker, then hands back once it's safe again.
+        self.primary_worker = worker
+        self.recovery_worker = recovery_worker
+        self._recovering = False
         self.guardrails = guardrails or GuardrailSet()
         self.checkpoints = checkpoints or list(DEFAULT_CHECKPOINTS)
         self.material = material or MaterialHandler()
@@ -67,6 +73,13 @@ class HarnessLoop:
         self._feedback: str | None = None
         self._consecutive_fails = 0
         self._last_action: Action | None = None
+
+    def set_primary(self, worker: Worker) -> None:
+        """Swap the primary worker (e.g. from the dashboard). No-op on the active
+        worker while a recovery is in progress; it takes effect on hand-back."""
+        self.primary_worker = worker
+        if not self._recovering:
+            self.worker = worker
 
     def decide(self, prev: GameState) -> Action | None:
         """Guardrails pillar: get a worker action that passes every declared rule.
@@ -131,6 +144,22 @@ class HarnessLoop:
         primary_failed = any(
             not r.passed and r.name == self.escalation_checkpoint for r in results
         )
+
+        # Dual-worker hand-back: once the recovery worker has cleared the danger,
+        # return control to the primary agent.
+        if self._recovering and not primary_failed:
+            self._recovering = False
+            self.worker = self.primary_worker
+            self._consecutive_fails = 0
+            self.alarms.emit(
+                Alarm(
+                    "RECOVERED",
+                    Severity.MEDIUM,
+                    {"worker": self.worker.name},
+                    "hand control back to the primary agent",
+                )
+            )
+
         self._consecutive_fails = self._consecutive_fails + 1 if primary_failed else 0
 
         if fails:
@@ -140,18 +169,33 @@ class HarnessLoop:
                 + ". Adjust your strategy."
             )
             if primary_failed and self._consecutive_fails >= self.escalate_after:
-                self.alarms.emit(
-                    Alarm(
-                        "ESCALATE",
-                        Severity.CRITICAL,
-                        {
-                            "checkpoint": self.escalation_checkpoint,
-                            "consecutive_fails": self._consecutive_fails,
-                        },
-                        "request human intervention",
+                if self.recovery_worker is not None and not self._recovering:
+                    # Hand off to the recovery worker instead of stopping.
+                    self._recovering = True
+                    self.worker = self.recovery_worker
+                    self._consecutive_fails = 0
+                    self.alarms.emit(
+                        Alarm(
+                            "RECOVERY_SWAP",
+                            Severity.HIGH,
+                            {"checkpoint": self.escalation_checkpoint,
+                             "recovery_worker": self.recovery_worker.name},
+                            "hand off to the recovery worker",
+                        )
                     )
-                )
-                self.status = "STOP"
+                else:
+                    self.alarms.emit(
+                        Alarm(
+                            "ESCALATE",
+                            Severity.CRITICAL,
+                            {
+                                "checkpoint": self.escalation_checkpoint,
+                                "consecutive_fails": self._consecutive_fails,
+                            },
+                            "request human intervention",
+                        )
+                    )
+                    self.status = "STOP"
             else:
                 # Severity reflects the worst failed checkpoint (a minor hole is
                 # LOW; the stack-height danger is HIGH) so alarms read truthfully.

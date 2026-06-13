@@ -51,3 +51,32 @@ def test_guardrail_retry_then_succeed():
     assert loop.status == "RUNNING"
     assert any(a.type == "GUARDRAIL_BLOCKED" for a in loop.alarms.history)
     assert not any(a.type == "GUARDRAIL_DEADLOCK" for a in loop.alarms.history)
+
+
+class _AlwaysDrop:
+    name = "always-drop"
+    def decide(self, state, feedback):
+        return Action(("DROP",), 4)  # reckless: stacks up on the fake adapter
+
+
+class _Digger:
+    name = "digger"
+    def decide(self, state, feedback):
+        return Action(("LEFT", "DROP"), 4)  # "thoughtful" on the fake -> clears a line
+
+
+def test_dual_worker_recovery_swaps_and_hands_back():
+    loop = HarnessLoop(FakeTetrisAdapter(), _AlwaysDrop(), recovery_worker=_Digger())
+    loop.run(max_steps=40)
+    types = [a.type for a in loop.alarms.history]
+    assert "RECOVERY_SWAP" in types   # harness handed off to recovery
+    assert "RECOVERED" in types       # ...and handed back once safe
+    assert loop.status == "RUNNING"   # survived instead of escalating to human
+    assert loop.state.lines >= 1      # recovery actually cleared lines
+
+
+def test_no_recovery_worker_escalates_to_human():
+    loop = HarnessLoop(FakeTetrisAdapter(), _AlwaysDrop())  # no recovery
+    loop.run(max_steps=40)
+    assert loop.status == "STOP"
+    assert any(a.type == "ESCALATE" for a in loop.alarms.history)

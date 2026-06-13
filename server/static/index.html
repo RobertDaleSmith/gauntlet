@@ -44,13 +44,15 @@
           <button id="startBtn">▶ Start agent</button>
           <button id="resetBtn">⟲ Reset</button>
           <button id="replayBtn">⏪ Replay last run</button>
-          <div class="seclabel">LLM agent — plays by vision</div>
-          <button class="wbtn active" data-worker="claude" data-model="claude-haiku-4-5">Claude Haiku · fast</button>
-          <button class="wbtn" data-worker="claude" data-model="claude-sonnet-4-6">Claude Sonnet</button>
-          <button class="wbtn" data-worker="claude" data-model="claude-opus-4-8">Claude Opus · smartest</button>
+          <div class="seclabel">LLM agent — drives buttons</div>
+          <button class="wbtn active" data-worker="claude" data-model="claude-haiku-4-5" data-perception="text">State · Haiku (fast)</button>
+          <button class="wbtn" data-worker="claude" data-model="claude-opus-4-8" data-perception="text">State · Opus (smart)</button>
+          <button class="wbtn" data-worker="claude" data-model="claude-haiku-4-5" data-perception="vision">Vision · Haiku (sees screen)</button>
           <div class="seclabel">Baselines — not LLM</div>
           <button class="wbtn" data-worker="heuristic">Heuristic (search AI)</button>
           <button class="wbtn" data-worker="scripted">Reckless</button>
+          <div class="seclabel">Harness</div>
+          <button id="recoveryBtn" class="active">Recovery: ON</button>
         </div>
         <div class="hint">When the agent is paused you can play with the keyboard: ← → move · ↑ rotate · ↓ soft · space drop</div>
       </div>
@@ -113,8 +115,8 @@
       ws.onopen = () => {
         setConn("live", "connected — press Start");
         $("startBtn").disabled = false;
-        // LLM first: default the agent to the (fast) Claude vision worker.
-        ws.send(JSON.stringify({ type: "set_worker", worker: "claude", model: "claude-haiku-4-5" }));
+        // LLM first: default to the fast text-perception Claude worker.
+        ws.send(JSON.stringify({ type: "set_worker", worker: "claude", model: "claude-haiku-4-5", perception: "text" }));
       };
       ws.onclose = () => { setConn("off", "harness offline (serve via the FastAPI app to watch the agent)"); running = false; startGravity(); };
       ws.onerror = () => setConn("off", "harness offline");
@@ -160,19 +162,26 @@
       } else if (msg.type === "worker_set") {
         document.querySelectorAll(".wbtn").forEach((b) =>
           b.classList.toggle("active",
-            b.dataset.worker === msg.worker && (b.dataset.model || null) === (msg.model || null)));
-        $("worker").textContent = workerLabel(msg.worker, msg.model);
+            b.dataset.worker === msg.worker &&
+            (b.dataset.model || null) === (msg.model || null) &&
+            (b.dataset.perception || null) === (msg.perception || null)));
+        $("worker").textContent = workerLabel(msg.worker, msg.model, msg.perception);
+      } else if (msg.type === "recovery_set") {
+        $("recoveryBtn").textContent = "Recovery: " + (msg.on ? "ON" : "OFF");
+        $("recoveryBtn").classList.toggle("active", msg.on);
       } else if (msg.type === "reset_ok") {
         game.reset(); draw();
       }
     }
 
-    function workerLabel(worker, model) {
-      return worker === "claude" && model ? "claude · " + model.replace("claude-", "") : worker;
+    function workerLabel(worker, model, perception) {
+      if (worker !== "claude") return worker;
+      const mode = perception === "vision" ? " (vision)" : " (state)";
+      return "claude · " + (model || "").replace("claude-", "") + mode;
     }
     function renderEvents(msg) {
       if (msg.run_id) lastRunId = msg.run_id;
-      if (msg.worker) $("worker").textContent = workerLabel(msg.worker, msg.model);
+      if (msg.worker) $("worker").textContent = workerLabel(msg.worker, msg.model, msg.perception);
       if (msg.action) $("intent").textContent = msg.action.buttons.join(" + ") + "  (" + msg.action.hold_frames + "f)";
       if (msg.checkpoints) {
         $("checkpoints").innerHTML = msg.checkpoints.length
@@ -200,6 +209,11 @@
       if (running) { stopGravity(); observe(); } else { startGravity(); }
     };
     $("resetBtn").onclick = () => { game.reset(); draw(); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "reset" })); };
+    let recoveryOn = true;
+    $("recoveryBtn").onclick = () => {
+      recoveryOn = !recoveryOn;
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "set_recovery", on: recoveryOn }));
+    };
 
     function renderBoard(board) {
       const C = Tetris.CELL;
@@ -226,7 +240,8 @@
     document.querySelectorAll(".wbtn").forEach((b) => {
       b.onclick = () => {
         if (!ws || ws.readyState !== 1) return;
-        ws.send(JSON.stringify({ type: "set_worker", worker: b.dataset.worker, model: b.dataset.model || null }));
+        ws.send(JSON.stringify({ type: "set_worker", worker: b.dataset.worker,
+          model: b.dataset.model || null, perception: b.dataset.perception || null }));
       };
     });
 
