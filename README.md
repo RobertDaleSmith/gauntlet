@@ -59,8 +59,7 @@ The game runs in the viewer's browser, so the harness is a plain web app — no
 headless browser server-side.
 
 ```bash
-# Render: connect the repo at render.com → New → Blueprint (uses render.yaml)
-# Fly:    fly launch --copy-config --now           (uses Dockerfile + fly.toml)
+# Render: connect the repo at render.com → New → Blueprint (uses render.yaml + Dockerfile)
 ```
 
 Set `ANTHROPIC_API_KEY` as a secret to enable the LLM worker in production
