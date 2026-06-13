@@ -86,30 +86,41 @@ reusable halves so both the local runner and the browser path share it:
   - **game over** → `GAME_OVER` alarm, STOP.
   - **checkpoint(s) failed** → build a feedback hint, emit `CHECKPOINT_FAILED`.
     The same agent gets the hint on its next decision and changes course.
-  - **primary checkpoint fails `escalate_after` times in a row** → `ESCALATE`
-    (CRITICAL), STOP and ask a human.
+  - **primary checkpoint fails `recover_after` times** → hand off to the recovery
+    worker (`RECOVERY_SWAP`); hand back once safe (`RECOVERED`); only `ESCALATE`
+    (CRITICAL, STOP, ask a human) if recovery also fails or none is configured.
   - **all pass** → clear feedback, reset the streak.
 
 This is the graded "must": *the agent's behavior changes meaningfully based on
 guardrail/checkpoint feedback.* Watch the reckless worker stack up, trip
-`STACK_HEIGHT_SAFE`, fire an alarm, and (with a smarter worker) recover.
+`STACK_HEIGHT_SAFE`, fire an alarm, the harness hand off to recovery, and — if
+the board is unrecoverable — escalate to a human.
 
 ---
 
-## Worker independence (Should) + live swap (Bonus)
+## Worker independence (Should) + live swap (Bonus) + dual-worker recovery
 
 Any worker implementing `decide(state, feedback) -> Action` drops in with **no
 harness changes** (`workers/base.py`). Three ship today:
 
 | Worker | Perception | Behavior |
 |---|---|---|
+| `heuristic` | ground-truth board | Competent Tetris AI (El-Tetris) — plays low/flat, clears lines |
+| `claude` | **state** (ASCII board) *or* **vision** (rendered frame) | A modern LLM driving the controller (`{buttons}` sequence per piece). State mode is fast; vision mode "sees the screen." |
 | `scripted` | none | Reckless (drops straight) — demos escalation/STOP |
-| `heuristic` | ground-truth board | Competent Tetris AI (El-Tetris) — plays low/flat |
-| `claude` | **vision (the frame)** | Sees the board as an image, returns a controller action via structured output (Haiku 4.5) |
 
-Swap live from the dashboard (`set_worker` over WS) — verified scripted →
-heuristic mid-run. The Claude worker receives only the rendered frame via
-`set_frame()`; it never sees the ground-truth board.
+Swap live from the dashboard (`set_worker` over WS) — verified. The Claude worker
+drives **buttons like a human** (never abstract placements); in vision mode it
+receives only the rendered frame, never the ground-truth board.
+
+### Dual-worker recovery (the harness orchestrating agents)
+
+The loop holds a **primary** worker and a **recovery** worker. On repeated
+primary-checkpoint failure it swaps to the recovery worker (heuristic by default)
+to dig the board out, hands back once safe, and escalates to a human only if
+recovery also fails. The alarm's `recommended_action: "switch recovery worker"`
+literally executes — a capable-fallback + human-escalation safety pattern. Toggle
+it from the dashboard (`Recovery: ON/OFF`) to show the contrast.
 
 ---
 
