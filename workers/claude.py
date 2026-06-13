@@ -1,9 +1,9 @@
-"""Claude worker — Anthropic SDK, Haiku 4.5, structured-output actions.
+"""Claude worker — Anthropic SDK, vision, structured-output actions.
 
-Reads structured GameState, returns an Action via structured output
-(`{buttons, hold_frames}`). Haiku is the fast reflex layer, so thinking is left
-off for latency. The client is injectable for testing; in production it lazily
-constructs `anthropic.Anthropic()`.
+The agent SEES the rendered board as an image and plans a whole placement for the
+current piece in one turn (look once, output the full button sequence ending in
+DROP) — far fewer vision calls than nudging one button at a time. Uses Opus 4.8
+(strong high-res vision) with adaptive thinking. Client is injectable for tests.
 """
 from __future__ import annotations
 
@@ -11,14 +11,17 @@ import json
 
 from harness.types import Action, GameState
 
-MODEL = "claude-haiku-4-5"
+MODEL = "claude-opus-4-8"
 
 SYSTEM = (
-    "You are playing Tetris through a controller. You SEE the board as an image. "
-    "Return the next controller action: which buttons to hold and for how long. "
-    "Buttons: LEFT, RIGHT, ROTATE, DOWN, DROP. Keep the stack low and flat, avoid "
-    "holes, and clear lines. If feedback says the stack is too high, reposition "
-    "the piece (LEFT/RIGHT/ROTATE) to fill gaps rather than dropping straight down."
+    "You are playing Tetris. You SEE the current board as an image: a 10-wide, "
+    "20-tall grid; filled cells are colored, the falling piece is at the top. "
+    "Plan where the CURRENT piece should land to keep the stack low and flat, "
+    "avoid burying holes, and complete full rows. Then output the controller "
+    "sequence to get it there: zero or more ROTATE, then move horizontally with "
+    "LEFT *or* RIGHT (never both in one turn), then a final DROP. Always end with "
+    "DROP so the piece locks this turn. If feedback says the stack is too high, "
+    "prioritize flattening and clearing lines."
 )
 
 ACTION_SCHEMA = {
@@ -55,7 +58,11 @@ class ClaudeWorker:
     def _prompt(self, feedback: str | None) -> str:
         # Text carries only the coach's feedback hint — never the ground-truth
         # board the referee uses to grade. The agent reads the board from the image.
-        return f"feedback: {feedback or 'none'}\nReturn the next controller action."
+        return (
+            f"feedback: {feedback or 'none'}\n"
+            "Output the button sequence to place the current piece (rotations, "
+            "then LEFT or RIGHT moves, then DROP)."
+        )
 
     def _content(self, feedback: str | None):
         text = {"type": "text", "text": self._prompt(feedback)}
@@ -71,10 +78,14 @@ class ClaudeWorker:
     def decide(self, state: GameState, feedback: str | None) -> Action:
         resp = self._ensure_client().messages.create(
             model=self.model,
-            max_tokens=256,
+            max_tokens=2048,
             system=SYSTEM,
             messages=[{"role": "user", "content": self._content(feedback)}],
-            output_config={"format": {"type": "json_schema", "schema": ACTION_SCHEMA}},
+            thinking={"type": "adaptive"},  # let it plan the placement
+            output_config={
+                "format": {"type": "json_schema", "schema": ACTION_SCHEMA},
+                "effort": "low",  # quick planning; the game waits, so no drift
+            },
         )
         text = next(b.text for b in resp.content if getattr(b, "type", None) == "text")
         data = json.loads(text)
