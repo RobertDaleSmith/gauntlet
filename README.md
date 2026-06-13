@@ -33,7 +33,8 @@ swapping in a recovery worker) when it can't move forward.
 🚧 In planning. Architecture locked.
 
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — design source of truth
-- [`Joypad_Harness_Architecture_Defense.pdf`](Joypad_Harness_Architecture_Defense.pdf) — 1-page planning doc
+- [`Harness_Planning.pdf`](Harness_Planning.pdf) — 1-page planning doc (source: [`docs/Harness_Planning.md`](docs/Harness_Planning.md))
+- [`Joypad_Harness_Architecture_Defense.pdf`](Joypad_Harness_Architecture_Defense.pdf) — earlier planning draft
 - [`24-hour Build Challenge.pdf`](24-hour%20Build%20Challenge.pdf) — challenge spec
 
 ## Deliverables
