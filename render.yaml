@@ -1,10 +1,10 @@
-# Render blueprint — connect the repo at https://render.com and it auto-deploys.
+# Render blueprint — connect the repo at https://render.com → New → Blueprint.
+# Render injects its own $PORT and routes to it; the Dockerfile binds $PORT, so
+# we do NOT hardcode it here. Add ANTHROPIC_API_KEY in the dashboard to enable
+# the vision worker (optional — scripted/heuristic workers need no key).
 services:
   - type: web
     name: gauntlet-harness
     runtime: docker
     plan: free
     healthCheckPath: /
-    envVars:
-      - key: PORT
-        value: "8000"
