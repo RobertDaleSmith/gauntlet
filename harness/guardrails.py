@@ -60,10 +60,33 @@ class NoImpossibleCombos:
         return Verdict(True)
 
 
+class RateLimit:
+    """Lower bound on the action window — prevents input flooding.
+
+    Pairs with MaxHoldFrames (upper bound): together they keep every action
+    within a sane window so the agent can't spam micro-inputs.
+    """
+
+    name = "RATE_LIMIT"
+
+    def __init__(self, min_hold_frames: int = 4) -> None:
+        self.min_hold_frames = min_hold_frames
+
+    def check(self, action: Action, state: GameState) -> Verdict:
+        if action.hold_frames < self.min_hold_frames:
+            return Verdict(
+                False,
+                f"hold {action.hold_frames} < min {self.min_hold_frames}",
+                self.name,
+            )
+        return Verdict(True)
+
+
 # The declared guardrail set. This is what "guardrails are declared" means.
 DEFAULT_GUARDRAILS: list[Guardrail] = [
     AllowedButtons(),
     MaxHoldFrames(120),
+    RateLimit(4),
     NoImpossibleCombos(),
 ]
 

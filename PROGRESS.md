@@ -25,7 +25,7 @@ Legend: `[x]` built & tested · `[ ]` not built yet.
 - [x] FastAPI + dashboard skeleton (`server/app.py`, `server/static/index.html`)
 
 ## To build (in order)
-- [ ] **RateLimit guardrail** — cap actions/sec or min hold; add to `DEFAULT_GUARDRAILS` + test
+- [x] **RateLimit guardrail** — min-hold lower bound in `DEFAULT_GUARDRAILS` + test
 - [ ] **More checkpoints** — `LEVEL_ADVANCED`, score-milestone; tests
 - [ ] **ClaudeWorker.decide** — Anthropic SDK, model `claude-haiku-4-5`, structured output
       `{buttons, hold_frames}`; include `feedback` in the prompt; thinking off; unit test with a mock client

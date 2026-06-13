@@ -3,6 +3,7 @@ from harness.guardrails import (
     GuardrailSet,
     MaxHoldFrames,
     NoImpossibleCombos,
+    RateLimit,
 )
 from harness.types import Action, GameState
 
@@ -21,6 +22,11 @@ def test_max_hold_frames_blocks_over_limit():
 
 def test_no_impossible_combos_blocks_opposites():
     assert not NoImpossibleCombos().check(Action(("LEFT", "RIGHT"), 30), STATE).allowed
+
+
+def test_rate_limit_blocks_tiny_windows():
+    assert not RateLimit(4).check(Action(("RIGHT",), 1), STATE).allowed
+    assert RateLimit(4).check(Action(("RIGHT",), 30), STATE).allowed
 
 
 def test_guardrail_set_allows_valid_action():
