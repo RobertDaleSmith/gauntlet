@@ -40,6 +40,7 @@ class MaterialHandler:
             x=raw.get("x", 0),
             score=raw.get("score", 0),
             lives=raw.get("lives", 3),
+            level=raw.get("level", 0),
             raw=raw,
         )
 

@@ -26,7 +26,7 @@ Legend: `[x]` built & tested · `[ ]` not built yet.
 
 ## To build (in order)
 - [x] **RateLimit guardrail** — min-hold lower bound in `DEFAULT_GUARDRAILS` + test
-- [ ] **More checkpoints** — `LEVEL_ADVANCED`, score-milestone; tests
+- [x] **More checkpoints** — `LevelAdvanced` (default), `ScoreMilestone` (gate); `level` field; tests
 - [ ] **ClaudeWorker.decide** — Anthropic SDK, model `claude-haiku-4-5`, structured output
       `{buttons, hold_frames}`; include `feedback` in the prompt; thinking off; unit test with a mock client
 - [ ] **WebSocketGameAdapter** — implements `GameAdapter` over the WS protocol (no harness changes)

@@ -58,8 +58,32 @@ class ScoreNonDecreasing:
         )
 
 
+class LevelAdvanced:
+    name = "LEVEL_ADVANCED"
+
+    def evaluate(self, prev: GameState, new: GameState) -> CheckpointResult:
+        return CheckpointResult(
+            self.name, new.level >= prev.level, f"level {prev.level}->{new.level}"
+        )
+
+
+class ScoreMilestone:
+    """Gate checkpoint — passes once score reaches a threshold (not a default)."""
+
+    name = "SCORE_MILESTONE"
+
+    def __init__(self, threshold: int) -> None:
+        self.threshold = threshold
+
+    def evaluate(self, prev: GameState, new: GameState) -> CheckpointResult:
+        return CheckpointResult(
+            self.name, new.score >= self.threshold, f"score {new.score} / {self.threshold}"
+        )
+
+
 DEFAULT_CHECKPOINTS: list[Checkpoint] = [
     ForwardProgress(),
     StillAlive(),
     ScoreNonDecreasing(),
+    LevelAdvanced(),
 ]

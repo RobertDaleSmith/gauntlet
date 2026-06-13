@@ -15,6 +15,7 @@ class GameState:
     x: int = 0
     score: int = 0
     lives: int = 3
+    level: int = 0
     raw: dict = field(default_factory=dict)
 
 

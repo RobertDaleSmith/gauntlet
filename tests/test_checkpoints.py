@@ -1,4 +1,10 @@
-from harness.checkpoints import ForwardProgress, ScoreNonDecreasing, StillAlive
+from harness.checkpoints import (
+    ForwardProgress,
+    LevelAdvanced,
+    ScoreMilestone,
+    ScoreNonDecreasing,
+    StillAlive,
+)
 from harness.types import GameState
 
 
@@ -17,3 +23,15 @@ def test_score_non_decreasing():
     a = GameState(0, score=100)
     assert ScoreNonDecreasing().evaluate(a, GameState(1, score=100)).passed
     assert not ScoreNonDecreasing().evaluate(a, GameState(1, score=50)).passed
+
+
+def test_level_advanced():
+    a = GameState(0, level=1)
+    assert LevelAdvanced().evaluate(a, GameState(1, level=2)).passed
+    assert not LevelAdvanced().evaluate(a, GameState(1, level=0)).passed
+
+
+def test_score_milestone_gate():
+    cp = ScoreMilestone(1000)
+    assert cp.evaluate(GameState(0), GameState(1, score=1000)).passed
+    assert not cp.evaluate(GameState(0), GameState(1, score=500)).passed
