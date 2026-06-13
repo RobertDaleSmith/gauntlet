@@ -1,5 +1,5 @@
 # fly.toml — deploy with: fly launch --copy-config --now  (then `fly deploy`)
-app = "gauntlet-harness"
+app = "joypad-harness"
 primary_region = "iad"
 
 [build]

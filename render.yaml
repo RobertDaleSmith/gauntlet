@@ -4,7 +4,7 @@
 # the vision worker (optional — scripted/heuristic workers need no key).
 services:
   - type: web
-    name: gauntlet-harness
+    name: joypad-harness
     runtime: docker
     plan: free
     healthCheckPath: /

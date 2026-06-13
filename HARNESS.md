@@ -1,4 +1,4 @@
-# HARNESS.md — Gauntlet Joypad Harness
+# HARNESS.md — Joypad Harness
 
 A runtime safety harness that governs an AI game-playing agent. The agent plays
 **like a human**: it sees the rendered screen (pixels) and presses controller

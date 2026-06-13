@@ -1,4 +1,4 @@
-# Build Progress — Gauntlet Joypad Harness
+# Build Progress — Joypad Harness
 
 Ralph-loop worklist. Each iteration: read `ARCHITECTURE.md` + this file → build the
 **next unchecked item** → run the verification hook → if green, check the box and

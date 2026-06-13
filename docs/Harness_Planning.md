@@ -1,4 +1,4 @@
-# Gauntlet — Joypad Harness Planning Document
+# Joypad Harness — Planning Document
 
 **A runtime safety harness governing an AI agent that plays a game like a human** — it sees the rendered screen and presses controller buttons. The harness decides which inputs are legal, measures progress, carries state in and out, and raises structured alarms; on failure it feeds feedback back, on repeated failure it stops and asks a human. The harness, not the agent, is evaluated.
 

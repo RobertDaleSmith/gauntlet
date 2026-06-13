@@ -1,4 +1,4 @@
-"""Gauntlet harness — the four pillars that govern a game-playing agent.
+"""Joypad Harness — the four pillars that govern a game-playing agent.
 
 Each pillar is a separate, importable component:
   guardrails  — declared rules on controller input (validated before execution)

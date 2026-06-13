@@ -63,7 +63,7 @@ def create_app():
     from harness.material import MaterialHandler
     from harness.session import HarnessSession
 
-    app = FastAPI(title="Gauntlet — Joypad Harness")
+    app = FastAPI(title="Joypad Harness")
 
     @app.get("/api/runs/{run_id}")
     def replay(run_id: str):
