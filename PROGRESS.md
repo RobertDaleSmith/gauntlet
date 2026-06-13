@@ -29,7 +29,7 @@ Legend: `[x]` built & tested · `[ ]` not built yet.
 - [x] **More checkpoints** — `LevelAdvanced` (default), `ScoreMilestone` (gate); `level` field; tests
 - [x] **ClaudeWorker.decide** — Haiku 4.5, structured-output `{buttons, hold_frames}`,
       feedback in prompt, injectable client, mock-based test
-- [ ] **WebSocketGameAdapter** — implements `GameAdapter` over the WS protocol (no harness changes)
+- [x] **WebSocketGameAdapter** — `GameAdapter` over a `Transport`; drop-in (loop-compat test)
 - [ ] **WS protocol** in `server/app.py` — browser sends game state; harness sends actions;
       stream `intent` / `checkpoint` / `alarm` / `guardrail` events to the dashboard
 - [ ] **jsnes integration** (`index.html`) — load a (free/homebrew) ROM, expose RAM (x/score/lives),
