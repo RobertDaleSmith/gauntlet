@@ -146,8 +146,9 @@
       if (guard.length) $("guardrails").innerHTML = guard.map(fmtAlarm).join("");
     }
     function fmtAlarm(a) {
-      const cls = a.severity === "CRITICAL" ? "crit" : "alarm";
-      return `<div class="row ${cls}">🚨 ${a.type} <span class="muted">[${a.severity}]</span><br><span class="muted">→ ${a.recommended_action}</span></div>`;
+      const cls = a.severity === "CRITICAL" ? "crit" : (a.severity === "HIGH" ? "alarm" : "muted");
+      const icon = (a.severity === "CRITICAL" || a.severity === "HIGH") ? "🚨" : "·";
+      return `<div class="row ${cls}">${icon} ${a.type} <span class="muted">[${a.severity}]</span><br><span class="muted">→ ${a.recommended_action}</span></div>`;
     }
 
     // ---- controls ----

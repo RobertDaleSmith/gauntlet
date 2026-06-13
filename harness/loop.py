@@ -153,10 +153,19 @@ class HarnessLoop:
                 )
                 self.status = "STOP"
             else:
+                # Severity reflects the worst failed checkpoint (a minor hole is
+                # LOW; the stack-height danger is HIGH) so alarms read truthfully.
+                rank = {Severity.LOW: 0, Severity.MEDIUM: 1, Severity.HIGH: 2, Severity.CRITICAL: 3}
+                sev = max(
+                    (getattr(c, "severity", Severity.MEDIUM)
+                     for c, r in zip(self.checkpoints, results) if not r.passed),
+                    key=lambda s: rank[s],
+                    default=Severity.MEDIUM,
+                )
                 self.alarms.emit(
                     Alarm(
                         "CHECKPOINT_FAILED",
-                        Severity.HIGH,
+                        sev,
                         {"failed": [r.name for r in fails], "frame": new.frame},
                         "feed corrective hint to the worker",
                     )

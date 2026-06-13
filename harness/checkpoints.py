@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from .alarms import Severity
 from .types import GameState
 
 
@@ -34,6 +35,7 @@ class StackHeightSafe:
     """Primary danger checkpoint — fails when the stack climbs too high."""
 
     name = "STACK_HEIGHT_SAFE"
+    severity = Severity.HIGH
 
     def __init__(self, danger: int = 12) -> None:
         self.danger = danger
@@ -48,6 +50,7 @@ class StackHeightSafe:
 
 class NotGameOver:
     name = "NOT_GAME_OVER"
+    severity = Severity.HIGH
 
     def evaluate(self, prev: GameState, new: GameState) -> CheckpointResult:
         return CheckpointResult(self.name, not new.game_over, f"game_over={new.game_over}")
@@ -55,6 +58,7 @@ class NotGameOver:
 
 class NoNewHoles:
     name = "NO_NEW_HOLES"
+    severity = Severity.LOW
 
     def evaluate(self, prev: GameState, new: GameState) -> CheckpointResult:
         return CheckpointResult(
@@ -66,6 +70,7 @@ class LinesMilestone:
     """Gate checkpoint — passes once cleared lines reach a threshold (not default)."""
 
     name = "LINES_MILESTONE"
+    severity = Severity.LOW
 
     def __init__(self, threshold: int) -> None:
         self.threshold = threshold

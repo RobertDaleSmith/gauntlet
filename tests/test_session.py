@@ -53,3 +53,24 @@ def test_observations_after_stop_are_ignored():
     s.step(_state(20, game_over=True, frame=4))  # -> stopped
     again = s.step(_state(20, game_over=True, frame=8))
     assert again["type"] == "stopped"
+
+
+def _st(height, holes, frame):
+    return {"frame": frame, "stack_height": height, "lines": 0, "score": 0,
+            "holes": holes, "game_over": False, "level": 1}
+
+
+def test_alarm_severity_low_for_holes_only():
+    s = HarnessSession()
+    s.step(_st(0, 0, 0))
+    out = s.step(_st(5, 2, 4))  # holes 0->2 fails NO_NEW_HOLES (LOW); height safe
+    cf = [a for a in out["alarms"] if a["type"] == "CHECKPOINT_FAILED"]
+    assert cf and cf[0]["severity"] == "LOW"
+
+
+def test_alarm_severity_high_for_stack_danger():
+    s = HarnessSession()
+    s.step(_st(0, 0, 0))
+    out = s.step(_st(15, 0, 4))  # height 15 fails STACK_HEIGHT_SAFE (HIGH)
+    cf = [a for a in out["alarms"] if a["type"] == "CHECKPOINT_FAILED"]
+    assert cf and cf[0]["severity"] == "HIGH"
