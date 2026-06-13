@@ -1,8 +1,10 @@
-"""FastAPI app — serves the dashboard and bridges the game over WebSocket.
+"""FastAPI app — serves the game + dashboard and bridges them over WebSocket.
 
-STUB skeleton. The browser runs jsnes and the dashboard; it connects here over
-WebSocket. The harness sends actions; the browser returns game state + frames.
-Build out the WS protocol and wire HarnessLoop to a WebSocket-backed adapter.
+The browser renders Tetris and the dashboard. Each step it sends an `observe`
+(ground-truth state + rendered frame); a per-connection `HarnessSession` runs the
+pillars and returns the next `act` (controller action) plus the events to display.
+`set_worker` swaps the agent live; `reset` starts a fresh run. `GET /api/runs/{id}`
+replays a persisted run.
 """
 from __future__ import annotations
 

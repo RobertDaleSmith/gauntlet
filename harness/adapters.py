@@ -1,4 +1,4 @@
-"""Game adapters. FakeGameAdapter simulates Mario for tests + offline dev;
+"""Game adapters. FakeTetrisAdapter simulates Tetris for tests + offline dev;
 WebSocketGameAdapter drives a real in-browser game over a transport.
 
 The harness only depends on the GameAdapter protocol, so any adapter drops in
@@ -75,9 +75,12 @@ class Transport(Protocol):
 class WebSocketGameAdapter:
     """GameAdapter backed by a Transport. Sends typed messages, gets state back.
 
-    The browser runs jsnes and answers these messages; the harness is unaware of
-    the wire details. Implements the same protocol as FakeGameAdapter, so it is a
-    drop-in replacement with no harness changes.
+    The browser runs the game and answers these messages; the harness is unaware
+    of the wire details. Implements the same protocol as FakeTetrisAdapter, so it
+    is a drop-in replacement with no harness changes.
+
+    Note: the live server uses the browser-driven path (HarnessSession +
+    loop.decide/observe). This adapter is the harness-as-client alternative.
     """
 
     def __init__(self, transport: Transport) -> None:

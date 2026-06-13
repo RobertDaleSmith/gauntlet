@@ -20,7 +20,7 @@ from .types import Action, GameState
 
 
 class GameAdapter(Protocol):
-    """Pluggable game backend (jsnes over WebSocket, a real emulator, etc.)."""
+    """Pluggable game backend (browser game over WebSocket, a real emulator, etc.)."""
 
     def read_state(self) -> dict: ...
 
