@@ -39,6 +39,9 @@ class HarnessSession:
 
     def step(self, state_dict: dict, frame: str | None = None) -> dict:
         """Process one observation from the browser; return the next message."""
+        if self.loop.status != "RUNNING":
+            return {"type": "stopped", "status": self.loop.status,
+                    "checkpoints": [], "alarms": self._drain()}
         self.last_frame = frame
         new = self.loop.material.normalize(state_dict)
 

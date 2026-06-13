@@ -45,3 +45,11 @@ def test_worker_error_fails_safe():
     out = s.step(_state(0))
     assert out["type"] == "stopped"
     assert any(a["type"] == "WORKER_ERROR" for a in out["alarms"])
+
+
+def test_observations_after_stop_are_ignored():
+    s = HarnessSession()
+    s.step(_state(0))
+    s.step(_state(20, game_over=True, frame=4))  # -> stopped
+    again = s.step(_state(20, game_over=True, frame=8))
+    assert again["type"] == "stopped"
