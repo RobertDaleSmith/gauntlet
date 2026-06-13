@@ -29,6 +29,8 @@
       this.lines = 0;
       this.level = 1;
       this.frame = 0;
+      this.flashRows = [];
+      this.flashAt = 0;
       this.gameOver = false;
       this.nextType = randType();
       this._spawn();
@@ -107,6 +109,10 @@
     }
 
     _clearLines() {
+      // Capture the full rows (original indices) for the clear flash.
+      const fullRows = [];
+      for (let r = 0; r < ROWS; r++) if (this.board[r].every((c) => c)) fullRows.push(r);
+
       let cleared = 0;
       for (let r = ROWS - 1; r >= 0; r--) {
         if (this.board[r].every((c) => c)) {
@@ -120,6 +126,8 @@
         this.score += [0, 100, 300, 500, 800][cleared] * this.level;
         this.lines += cleared;
         this.level = 1 + Math.floor(this.lines / 10);
+        this.flashRows = fullRows; // brief white flash where the lines were
+        this.flashAt = performance.now();
       }
     }
 
@@ -182,6 +190,16 @@
         ctx.moveTo(0, r * CELL);
         ctx.lineTo(COLS * CELL, r * CELL);
         ctx.stroke();
+      }
+      // Line-clear flash: white bars fading out over ~160ms at the cleared rows.
+      if (this.flashRows.length) {
+        const t = (performance.now() - this.flashAt) / 160;
+        if (t < 1) {
+          ctx.fillStyle = `rgba(255,255,255,${0.85 * (1 - t)})`;
+          for (const r of this.flashRows) ctx.fillRect(0, r * CELL, COLS * CELL, CELL);
+        } else {
+          this.flashRows = [];
+        }
       }
       if (this.gameOver) {
         ctx.fillStyle = "rgba(0,0,0,.6)";

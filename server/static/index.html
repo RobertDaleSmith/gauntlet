@@ -70,6 +70,7 @@
     const $ = (id) => document.getElementById(id);
     let ws = null, running = false, gravity = null, lastRunId = null;
 
+    let flashing = false;
     function draw() {
       game.render(ctx);
       const s = game.state();
@@ -78,6 +79,15 @@
       $("level").textContent = s.level;
       $("next").textContent = s.next;
       $("height").textContent = s.stack_height;
+      // While a line-clear flash is active, keep redrawing so it fades smoothly.
+      if (game.flashRows.length && !flashing) {
+        flashing = true;
+        (function fade() {
+          game.render(ctx);
+          if (game.flashRows.length) requestAnimationFrame(fade);
+          else flashing = false;
+        })();
+      }
     }
 
     // ---- human play (when agent is paused) ----
