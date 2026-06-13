@@ -75,7 +75,8 @@
     const game = new Tetris();
     const ctx = document.getElementById("screen").getContext("2d");
     const $ = (id) => document.getElementById(id);
-    let ws = null, running = false, gravity = null, lastRunId = null;
+    let ws = null, running = false, gravity = null, lastRunId = null, wasRunning = false;
+    let currentWorker = { worker: "claude", model: "claude-haiku-4-5", perception: "text" };
 
     let flashing = false;
     function draw() {
@@ -115,11 +116,20 @@
       ws.onopen = () => {
         setConn("live", "connected — press Start");
         $("startBtn").disabled = false;
-        // LLM first: default to the fast text-perception Claude worker.
-        ws.send(JSON.stringify({ type: "set_worker", worker: "claude", model: "claude-haiku-4-5", perception: "text" }));
+        ws.send(JSON.stringify({ type: "set_worker", ...currentWorker }));  // restore selection
+        ws.send(JSON.stringify({ type: "set_recovery", on: recoveryOn }));
+        if (wasRunning) {  // resume after a transient drop
+          running = true; wasRunning = false;
+          $("startBtn").classList.add("active"); $("startBtn").textContent = "⏸ Pause agent";
+          stopGravity(); observe();
+        }
       };
-      ws.onclose = () => { setConn("off", "harness offline (serve via the FastAPI app to watch the agent)"); running = false; startGravity(); };
-      ws.onerror = () => setConn("off", "harness offline");
+      ws.onclose = () => {
+        wasRunning = running; running = false; startGravity();
+        setConn("off", "reconnecting…");
+        setTimeout(connect, 1000);  // auto-reconnect so a transient drop doesn't kill the run
+      };
+      ws.onerror = () => setConn("off", "connection error");
       ws.onmessage = (e) => handle(JSON.parse(e.data));
     }
     function setConn(cls, text) { $("dot").className = "status-dot " + cls; $("connstatus").textContent = text; }
@@ -240,8 +250,8 @@
     document.querySelectorAll(".wbtn").forEach((b) => {
       b.onclick = () => {
         if (!ws || ws.readyState !== 1) return;
-        ws.send(JSON.stringify({ type: "set_worker", worker: b.dataset.worker,
-          model: b.dataset.model || null, perception: b.dataset.perception || null }));
+        currentWorker = { worker: b.dataset.worker, model: b.dataset.model || null, perception: b.dataset.perception || null };
+        ws.send(JSON.stringify({ type: "set_worker", ...currentWorker }));
       };
     });
 

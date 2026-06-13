@@ -44,6 +44,8 @@ class HarnessLoop:
         alarms: AlarmBus | None = None,
         max_guardrail_retries: int = 3,
         escalate_after: int = 2,
+        recover_after: int = 1,
+        recovery_budget: int = 8,
         escalation_checkpoint: str | None = None,
         recovery_worker: Worker | None = None,
         run_id: str | None = None,
@@ -60,7 +62,9 @@ class HarnessLoop:
         self.material = material or MaterialHandler()
         self.alarms = alarms or AlarmBus()
         self.max_guardrail_retries = max_guardrail_retries
-        self.escalate_after = escalate_after
+        self.escalate_after = escalate_after        # no-recovery -> human STOP
+        self.recover_after = recover_after          # primary fails -> hand to recovery
+        self.recovery_budget = recovery_budget      # recovery fails this many -> human STOP
         # Which checkpoint's repeated failure escalates to a human STOP.
         # Defaults to the first (primary) checkpoint.
         self.escalation_checkpoint = escalation_checkpoint or (
@@ -168,34 +172,42 @@ class HarnessLoop:
                 + "; ".join(f"{r.name} ({r.detail})" for r in fails)
                 + ". Adjust your strategy."
             )
-            if primary_failed and self._consecutive_fails >= self.escalate_after:
-                if self.recovery_worker is not None and not self._recovering:
-                    # Hand off to the recovery worker instead of stopping.
-                    self._recovering = True
-                    self.worker = self.recovery_worker
-                    self._consecutive_fails = 0
-                    self.alarms.emit(
-                        Alarm(
-                            "RECOVERY_SWAP",
-                            Severity.HIGH,
-                            {"checkpoint": self.escalation_checkpoint,
-                             "recovery_worker": self.recovery_worker.name},
-                            "hand off to the recovery worker",
-                        )
+            if (
+                primary_failed
+                and not self._recovering
+                and self.recovery_worker is not None
+                and self._consecutive_fails >= self.recover_after
+            ):
+                # Hand off to the recovery worker early, before the board fills up.
+                self._recovering = True
+                self.worker = self.recovery_worker
+                self._consecutive_fails = 0
+                self.alarms.emit(
+                    Alarm(
+                        "RECOVERY_SWAP",
+                        Severity.HIGH,
+                        {"checkpoint": self.escalation_checkpoint,
+                         "recovery_worker": self.recovery_worker.name},
+                        "hand off to the recovery worker",
                     )
-                else:
-                    self.alarms.emit(
-                        Alarm(
-                            "ESCALATE",
-                            Severity.CRITICAL,
-                            {
-                                "checkpoint": self.escalation_checkpoint,
-                                "consecutive_fails": self._consecutive_fails,
-                            },
-                            "request human intervention",
-                        )
+                )
+            elif primary_failed and self._consecutive_fails >= (
+                self.recovery_budget if self._recovering else self.escalate_after
+            ):
+                # No recovery worker, or recovery itself couldn't dig out.
+                self.alarms.emit(
+                    Alarm(
+                        "ESCALATE",
+                        Severity.CRITICAL,
+                        {
+                            "checkpoint": self.escalation_checkpoint,
+                            "consecutive_fails": self._consecutive_fails,
+                            "during_recovery": self._recovering,
+                        },
+                        "request human intervention",
                     )
-                    self.status = "STOP"
+                )
+                self.status = "STOP"
             else:
                 # Severity reflects the worst failed checkpoint (a minor hole is
                 # LOW; the stack-height danger is HIGH) so alarms read truthfully.

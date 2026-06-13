@@ -15,6 +15,8 @@ def _state(height, lines=0, game_over=False, frame=0):
 def test_ws_returns_actions_and_grades():
     client = TestClient(create_app())
     with client.websocket_connect("/ws") as ws:
+        ws.send_json({"type": "set_recovery", "on": False})  # isolate the grading path
+        ws.receive_json()
         ws.send_json({"type": "observe", "state": _state(0)})
         first = ws.receive_json()
         assert first["type"] == "act"

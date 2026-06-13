@@ -17,12 +17,21 @@ def test_first_observe_returns_an_action_no_checkpoints():
 
 def test_grades_previous_step_and_emits_alarm_when_stack_too_high():
     s = HarnessSession()
+    s.set_recovery(False)  # isolate the CHECKPOINT_FAILED path (no recovery hand-off)
     s.step(_state(0))  # first observe -> action
     out = s.step(_state(15, frame=4))  # report a dangerously high stack
     names = [c["name"] for c in out["checkpoints"]]
     assert "STACK_HEIGHT_SAFE" in names
     assert any(not c["passed"] for c in out["checkpoints"])
     assert any(a["type"] == "CHECKPOINT_FAILED" for a in out["alarms"])
+
+
+def test_recovery_on_swaps_worker_when_stack_too_high():
+    s = HarnessSession()  # recovery on by default
+    s.step(_state(0))
+    out = s.step(_state(15, frame=4))  # stack danger -> hand off to recovery
+    assert any(a["type"] == "RECOVERY_SWAP" for a in out["alarms"])
+    assert s.loop.worker.name == "heuristic"  # recovery worker now driving
 
 
 def test_game_over_stops_the_session():
@@ -70,6 +79,7 @@ def test_alarm_severity_low_for_holes_only():
 
 def test_alarm_severity_high_for_stack_danger():
     s = HarnessSession()
+    s.set_recovery(False)  # so the stack danger alarms instead of handing off
     s.step(_st(0, 0, 0))
     out = s.step(_st(15, 0, 4))  # height 15 fails STACK_HEIGHT_SAFE (HIGH)
     cf = [a for a in out["alarms"] if a["type"] == "CHECKPOINT_FAILED"]
