@@ -41,3 +41,14 @@ def test_claude_worker_uses_haiku_and_passes_feedback():
     assert fake.last_kwargs["model"] == MODEL
     # feedback is carried in the user message (text or vision content list)
     assert "hello-feedback" in str(fake.last_kwargs["messages"])
+
+
+def test_claude_worker_sends_frame_as_image():
+    fake = FakeClient('{"buttons": ["DROP"], "hold_frames": 4}')
+    w = ClaudeWorker(client=fake)
+    w.set_frame("data:image/png;base64,AAAABBBB")  # the rendered frame
+    w.decide(GameState(0), feedback=None)
+    content = fake.last_kwargs["messages"][0]["content"]
+    assert isinstance(content, list)
+    image = next(b for b in content if b.get("type") == "image")
+    assert image["source"]["data"] == "AAAABBBB"  # base64 prefix stripped

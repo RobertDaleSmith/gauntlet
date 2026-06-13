@@ -38,6 +38,12 @@ class ClaudeWorker:
     def __init__(self, client=None, model: str = MODEL) -> None:
         self.client = client
         self.model = model
+        self._frame: str | None = None
+
+    def set_frame(self, frame: str | None) -> None:
+        """Latest rendered frame (data URL). The session calls this before decide;
+        this is the agent's only perception channel — it sees pixels, like a human."""
+        self._frame = frame
 
     def _ensure_client(self):
         if self.client is None:
@@ -46,17 +52,28 @@ class ClaudeWorker:
             self.client = anthropic.Anthropic()
         return self.client
 
-    def _prompt(self, state: GameState, feedback: str | None) -> str:
-        # The agent reasons over the image; this text only carries the coach's
-        # feedback hint (never the ground-truth board the referee uses to grade).
+    def _prompt(self, feedback: str | None) -> str:
+        # Text carries only the coach's feedback hint — never the ground-truth
+        # board the referee uses to grade. The agent reads the board from the image.
         return f"feedback: {feedback or 'none'}\nReturn the next controller action."
+
+    def _content(self, feedback: str | None):
+        text = {"type": "text", "text": self._prompt(feedback)}
+        if not self._frame:
+            return self._prompt(feedback)  # text-only fallback (no frame yet)
+        b64 = self._frame.split(",", 1)[1] if "," in self._frame else self._frame
+        image = {
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png", "data": b64},
+        }
+        return [image, text]
 
     def decide(self, state: GameState, feedback: str | None) -> Action:
         resp = self._ensure_client().messages.create(
             model=self.model,
             max_tokens=256,
             system=SYSTEM,
-            messages=[{"role": "user", "content": self._prompt(state, feedback)}],
+            messages=[{"role": "user", "content": self._content(feedback)}],
             output_config={"format": {"type": "json_schema", "schema": ACTION_SCHEMA}},
         )
         text = next(b.text for b in resp.content if getattr(b, "type", None) == "text")

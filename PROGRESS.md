@@ -40,8 +40,8 @@ Legend: `[x]` built & tested · `[ ]` not built yet.
       pillars; TestClient protocol tests. Verified live end-to-end in the browser.
 - [x] **Dashboard rendering** — live worker, agent intent, checkpoints (green/red), alarms, guardrails;
       Start/Pause, Reset, worker-swap controls. Verified via screenshot (all pillars firing).
-- [ ] **Vision agent** — `ClaudeWorker.set_frame()` + image content block so the agent sees pixels;
-      session already forwards the frame. Live needs an API key; build + mock-test now.
+- [x] **Vision agent** — `ClaudeWorker.set_frame()` + image content block (agent sees pixels);
+      session forwards the frame; mock-tested. Live run just needs `ANTHROPIC_API_KEY`.
 - [ ] **Smart scripted worker** — real Tetris placement heuristic (reads board from state.raw) so the
       baseline actually plays; keep a "reckless" mode to demo escalation. + tests
 - [ ] **Update docs** — `ARCHITECTURE.md` + planning doc to the Tetris + vision-first design
