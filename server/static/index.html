@@ -16,6 +16,8 @@
     button { background:#161616; color:#eee; border:1px solid var(--border); border-radius:6px; padding:7px 10px; font-size:12px; cursor:pointer; }
     button:hover { border-color:#444; }
     button.active { border-color:var(--amber); color:var(--amber); }
+    .intro { color:#999; font-size:13px; line-height:1.55; margin-bottom:18px; max-width:520px; }
+    .intro b { color:#eee; }
     .seclabel { margin:12px 0 2px; color:#777; font-size:10px; text-transform:uppercase; letter-spacing:.1em; }
     .hint { margin-top:8px; color:#666; font-size:11px; max-width:150px; line-height:1.5; }
     h2 { font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:#777; margin:18px 0 7px; }
@@ -59,6 +61,12 @@
       </div>
     </div>
     <div class="feed">
+      <div class="intro">
+        <b>Gauntlet</b> — a runtime <b>harness</b> that governs a game-playing agent.
+        Left is the game (the agent's world); below, the four pillars grade and steer
+        the agent live: 🛡️ guardrails · ✅ checkpoints · 📦 material · 🚨 alarms.
+        Pick an agent and press <b>Start</b>.
+      </div>
       <h2><span id="dot" class="status-dot off"></span>Harness</h2>
       <div class="row" id="connstatus">connecting…</div>
 
