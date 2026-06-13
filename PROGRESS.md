@@ -42,8 +42,9 @@ Legend: `[x]` built & tested · `[ ]` not built yet.
       Start/Pause, Reset, worker-swap controls. Verified via screenshot (all pillars firing).
 - [x] **Vision agent** — `ClaudeWorker.set_frame()` + image content block (agent sees pixels);
       session forwards the frame; mock-tested. Live run just needs `ANTHROPIC_API_KEY`.
-- [ ] **Smart scripted worker** — real Tetris placement heuristic (reads board from state.raw) so the
-      baseline actually plays; keep a "reckless" mode to demo escalation. + tests
+- [x] **Heuristic worker** — real Tetris placement AI (El-Tetris weights, reads board from state.raw),
+      plays well (low/flat, no holes); scripted stays "reckless" to demo escalation. Live worker-swap
+      verified (scripted→heuristic). + tests
 - [ ] **Update docs** — `ARCHITECTURE.md` + planning doc to the Tetris + vision-first design
 - [ ] **Replay** — endpoint + UI to scrub a finished run from SQLite (`load_state` / `replay`)
 - [ ] **Human escalation UI** — `STOP` state surfaces a prompt to the operator

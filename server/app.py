@@ -24,6 +24,10 @@ def _make_worker(name: str):
         from workers.claude import ClaudeWorker
 
         return ClaudeWorker()
+    if name == "heuristic":
+        from workers.heuristic import HeuristicWorker
+
+        return HeuristicWorker()
     return ScriptedWorker()
 
 

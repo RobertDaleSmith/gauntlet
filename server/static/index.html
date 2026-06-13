@@ -42,7 +42,8 @@
         <div class="controls">
           <button id="startBtn">▶ Start agent</button>
           <button id="resetBtn">⟲ Reset</button>
-          <button id="wScripted" class="active">worker: scripted</button>
+          <button id="wScripted" class="active">worker: scripted (reckless)</button>
+          <button id="wHeuristic">worker: heuristic</button>
           <button id="wClaude">worker: claude (vision)</button>
         </div>
         <div class="hint">When the agent is paused you can play with the keyboard: ← → move · ↑ rotate · ↓ soft · space drop</div>
@@ -120,6 +121,7 @@
         startGravity();
       } else if (msg.type === "worker_set") {
         $("wScripted").classList.toggle("active", msg.worker === "scripted");
+        $("wHeuristic").classList.toggle("active", msg.worker === "heuristic");
         $("wClaude").classList.toggle("active", msg.worker === "claude");
       } else if (msg.type === "reset_ok") {
         game.reset(); draw();
@@ -155,6 +157,7 @@
     };
     $("resetBtn").onclick = () => { game.reset(); draw(); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "reset" })); };
     $("wScripted").onclick = () => ws && ws.send(JSON.stringify({ type: "set_worker", worker: "scripted" }));
+    $("wHeuristic").onclick = () => ws && ws.send(JSON.stringify({ type: "set_worker", worker: "heuristic" }));
     $("wClaude").onclick = () => ws && ws.send(JSON.stringify({ type: "set_worker", worker: "claude" }));
 
     draw(); startGravity(); connect();
