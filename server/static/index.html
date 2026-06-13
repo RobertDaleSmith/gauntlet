@@ -241,7 +241,10 @@
       ctx.fillStyle = "#0e0e0e"; ctx.fillRect(0, 0, Tetris.COLS * C, Tetris.ROWS * C);
       for (let r = 0; r < board.length; r++)
         for (let c = 0; c < board[r].length; c++)
-          if (board[r][c]) { ctx.fillStyle = "#5B8DEF"; ctx.fillRect(c * C + 1, r * C + 1, C - 2, C - 2); }
+          if (board[r][c]) {
+            ctx.fillStyle = typeof board[r][c] === "string" ? board[r][c] : "#5B8DEF";
+            ctx.fillRect(c * C + 1, r * C + 1, C - 2, C - 2);
+          }
     }
     $("replayBtn").onclick = async () => {
       if (!lastRunId) { setConn(running ? "live" : "off", "no run to replay yet"); return; }

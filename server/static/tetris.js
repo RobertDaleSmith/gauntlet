@@ -153,7 +153,7 @@
     // Ground truth for the harness referee. The agent never reads this.
     state() {
       return {
-        board: this.board.map((row) => row.map((c) => (c ? 1 : 0))),
+        board: this.board.map((row) => row.map((c) => c || 0)),  // color string or 0
         current: {
           type: this.cur.type,
           cells: this.cur.cells.map(({ r, c }) => [this.cur.y + r, this.cur.x + c]),
