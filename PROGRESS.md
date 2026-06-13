@@ -36,11 +36,14 @@ Legend: `[x]` built & tested · `[ ]` not built yet.
 - [x] **Tetris checkpoints** — `StackHeightSafe`, `NotGameOver`, `NoNewHoles`, `LinesMilestone`;
       Mario checkpoints/adapter retired; `FakeTetrisAdapter` sim; loop generalized (game-agnostic
       feedback + escalation + game-over); workers + state pivoted to Tetris; 21 tests green
-- [ ] **WS protocol** in `server/app.py` — browser sends the rendered FRAME (base64) + ground-truth
-      state; harness sends controller actions; stream intent/checkpoint/alarm/guardrail to the dashboard
-- [ ] **Vision agent** — `ClaudeWorker` takes the frame as image input (agent sees pixels, like a
-      human); the harness keeps ground-truth state only for grading, never feeds it to the agent
-- [ ] **Dashboard rendering** — live worker, agent intent, checkpoints (green/red), alarms, guardrail blocks
+- [x] **WS protocol** in `server/app.py` — observe/act/set_worker/reset; `HarnessSession` runs the
+      pillars; TestClient protocol tests. Verified live end-to-end in the browser.
+- [x] **Dashboard rendering** — live worker, agent intent, checkpoints (green/red), alarms, guardrails;
+      Start/Pause, Reset, worker-swap controls. Verified via screenshot (all pillars firing).
+- [ ] **Vision agent** — `ClaudeWorker.set_frame()` + image content block so the agent sees pixels;
+      session already forwards the frame. Live needs an API key; build + mock-test now.
+- [ ] **Smart scripted worker** — real Tetris placement heuristic (reads board from state.raw) so the
+      baseline actually plays; keep a "reckless" mode to demo escalation. + tests
 - [ ] **Update docs** — `ARCHITECTURE.md` + planning doc to the Tetris + vision-first design
 - [ ] **Replay** — endpoint + UI to scrub a finished run from SQLite (`load_state` / `replay`)
 - [ ] **Human escalation UI** — `STOP` state surfaces a prompt to the operator

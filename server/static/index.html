@@ -4,47 +4,70 @@
   <meta charset="utf-8" />
   <title>Gauntlet — Joypad Harness</title>
   <style>
-    body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background:#0a0a0a; color:#eee; }
-    .wrap { display: grid; grid-template-columns: 1fr 1fr; height: 100vh; }
-    .game { border-right: 1px solid #2a2a2a; display:flex; gap:24px; align-items:center; justify-content:center; }
-    .feed { padding: 20px; overflow:auto; }
-    canvas { background:#0e0e0e; border:1px solid #2a2a2a; border-radius:6px; }
-    .stats div { margin: 8px 0; color:#bbb; font-size:14px; letter-spacing:.04em; }
-    .stats b { color:#fff; font-size:18px; }
-    .hint { margin-top:18px; color:#666; font-size:12px; max-width:140px; line-height:1.5; }
-    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color:#888; margin: 18px 0 6px; }
-    .pass { color:#34D399; } .fail { color:#FF4D4D; } .alarm { color:#FFB020; }
+    :root { --green:#34D399; --red:#FF4D4D; --amber:#FFB020; --border:#2a2a2a; }
+    body { margin:0; font-family:-apple-system, system-ui, sans-serif; background:#0a0a0a; color:#eee; }
+    .wrap { display:grid; grid-template-columns:1fr 1fr; height:100vh; }
+    .game { border-right:1px solid var(--border); display:flex; gap:24px; align-items:center; justify-content:center; }
+    .feed { padding:22px 26px; overflow:auto; }
+    canvas { background:#0e0e0e; border:1px solid var(--border); border-radius:6px; }
+    .stats div { margin:7px 0; color:#bbb; font-size:13px; letter-spacing:.04em; }
+    .stats b { color:#fff; font-size:17px; }
+    .controls { margin-top:16px; display:flex; flex-direction:column; gap:8px; }
+    button { background:#161616; color:#eee; border:1px solid var(--border); border-radius:6px; padding:7px 10px; font-size:12px; cursor:pointer; }
+    button:hover { border-color:#444; }
+    button.active { border-color:var(--amber); color:var(--amber); }
+    .hint { margin-top:8px; color:#666; font-size:11px; max-width:150px; line-height:1.5; }
+    h2 { font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:#777; margin:18px 0 7px; }
+    .big { font-size:18px; color:#fff; }
+    .row { font-size:14px; margin:3px 0; font-variant-numeric:tabular-nums; }
+    .pass { color:var(--green); } .fail { color:var(--red); } .alarm { color:var(--amber); }
+    .crit { color:var(--red); font-weight:600; }
+    .muted { color:#666; }
+    .status-dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:middle; }
+    .live { background:var(--green); } .off { background:#555; } .stop { background:var(--red); }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="game">
       <canvas id="screen" width="240" height="480"></canvas>
-      <div class="stats">
-        <div>SCORE <b id="score">0</b></div>
-        <div>LINES <b id="lines">0</b></div>
-        <div>LEVEL <b id="level">1</b></div>
-        <div>NEXT <b id="next">—</b></div>
-        <div>HEIGHT <b id="height">0</b></div>
-        <div class="hint">← → move · ↑ rotate · ↓ soft drop · space hard drop</div>
+      <div>
+        <div class="stats">
+          <div>SCORE <b id="score">0</b></div>
+          <div>LINES <b id="lines">0</b></div>
+          <div>LEVEL <b id="level">1</b></div>
+          <div>NEXT <b id="next">—</b></div>
+          <div>HEIGHT <b id="height">0</b></div>
+        </div>
+        <div class="controls">
+          <button id="startBtn">▶ Start agent</button>
+          <button id="resetBtn">⟲ Reset</button>
+          <button id="wScripted" class="active">worker: scripted</button>
+          <button id="wClaude">worker: claude (vision)</button>
+        </div>
+        <div class="hint">When the agent is paused you can play with the keyboard: ← → move · ↑ rotate · ↓ soft · space drop</div>
       </div>
     </div>
     <div class="feed">
-      <h2>Worker</h2><div id="worker">— (harness not connected yet)</div>
-      <h2>Agent intent</h2><div id="intent">—</div>
-      <h2>Checkpoints</h2><div id="checkpoints">—</div>
-      <h2>Alarms</h2><div id="alarms">—</div>
-      <h2>Guardrails</h2><div id="guardrails">—</div>
+      <h2><span id="dot" class="status-dot off"></span>Harness</h2>
+      <div class="row" id="connstatus">connecting…</div>
+
+      <h2>Worker</h2><div class="big" id="worker">—</div>
+      <h2>Agent intent</h2><div class="big" id="intent">—</div>
+      <h2>Checkpoints</h2><div id="checkpoints" class="muted">—</div>
+      <h2>Alarms</h2><div id="alarms" class="muted">—</div>
+      <h2>Guardrails</h2><div id="guardrails" class="muted">—</div>
     </div>
   </div>
 
   <script src="tetris.js"></script>
   <script>
+    const STEP_MS = 350;
     const game = new Tetris();
     const ctx = document.getElementById("screen").getContext("2d");
-    window.GAME = game; // handle for the WS bridge (built next)
-
     const $ = (id) => document.getElementById(id);
+    let ws = null, running = false, gravity = null;
+
     function draw() {
       game.render(ctx);
       const s = game.state();
@@ -55,15 +78,86 @@
       $("height").textContent = s.stack_height;
     }
 
+    // ---- human play (when agent is paused) ----
     document.addEventListener("keydown", (e) => {
-      const map = { ArrowLeft: "LEFT", ArrowRight: "RIGHT", ArrowUp: "ROTATE", ArrowDown: "DOWN", " ": "DROP" };
-      const btn = map[e.key];
-      if (btn) { e.preventDefault(); game.input(btn); draw(); }
+      if (running) return;
+      const map = { ArrowLeft:"LEFT", ArrowRight:"RIGHT", ArrowUp:"ROTATE", ArrowDown:"DOWN", " ":"DROP" };
+      const b = map[e.key];
+      if (b) { e.preventDefault(); game.input(b); draw(); }
       if (e.key.toLowerCase() === "r" && game.gameOver) { game.reset(); draw(); }
     });
+    function startGravity() { stopGravity(); gravity = setInterval(() => { if (!running) { game.tick(); draw(); } }, 700); }
+    function stopGravity() { if (gravity) clearInterval(gravity); gravity = null; }
 
-    setInterval(() => { game.tick(); draw(); }, 700); // gravity
-    draw();
+    // ---- agent loop over WebSocket ----
+    function connect() {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}/ws`);
+      ws.onopen = () => { setConn("live", "connected — press Start"); $("startBtn").disabled = false; };
+      ws.onclose = () => { setConn("off", "harness offline (serve via the FastAPI app to watch the agent)"); running = false; startGravity(); };
+      ws.onerror = () => setConn("off", "harness offline");
+      ws.onmessage = (e) => handle(JSON.parse(e.data));
+    }
+    function setConn(cls, text) { $("dot").className = "status-dot " + cls; $("connstatus").textContent = text; }
+
+    function observe() {
+      if (!running || !ws || ws.readyState !== 1) return;
+      const frame = document.getElementById("screen").toDataURL("image/png");
+      ws.send(JSON.stringify({ type: "observe", state: game.state(), frame }));
+    }
+
+    function handle(msg) {
+      if (msg.type === "act") {
+        renderEvents(msg);
+        for (const b of msg.action.buttons) game.input(b);
+        game.tick();
+        draw();
+        setTimeout(observe, STEP_MS);
+      } else if (msg.type === "stopped") {
+        renderEvents(msg);
+        setConn("stop", "STOPPED — " + (msg.error || msg.status) + " · Reset to retry");
+        running = false; $("startBtn").classList.remove("active"); $("startBtn").textContent = "▶ Start agent";
+        startGravity();
+      } else if (msg.type === "worker_set") {
+        $("wScripted").classList.toggle("active", msg.worker === "scripted");
+        $("wClaude").classList.toggle("active", msg.worker === "claude");
+      } else if (msg.type === "reset_ok") {
+        game.reset(); draw();
+      }
+    }
+
+    function renderEvents(msg) {
+      if (msg.worker) $("worker").textContent = msg.worker;
+      if (msg.action) $("intent").textContent = msg.action.buttons.join(" + ") + "  (" + msg.action.hold_frames + "f)";
+      if (msg.checkpoints) {
+        $("checkpoints").innerHTML = msg.checkpoints.length
+          ? msg.checkpoints.map((c) => `<div class="row ${c.passed ? "pass" : "fail"}">${c.passed ? "✓" : "✗"} ${c.name} <span class="muted">${c.detail}</span></div>`).join("")
+          : '<span class="muted">—</span>';
+      }
+      const alarms = (msg.alarms || []);
+      const guard = alarms.filter((a) => a.type.startsWith("GUARDRAIL"));
+      const other = alarms.filter((a) => !a.type.startsWith("GUARDRAIL"));
+      if (other.length) $("alarms").innerHTML = other.map(fmtAlarm).join("");
+      if (guard.length) $("guardrails").innerHTML = guard.map(fmtAlarm).join("");
+    }
+    function fmtAlarm(a) {
+      const cls = a.severity === "CRITICAL" ? "crit" : "alarm";
+      return `<div class="row ${cls}">🚨 ${a.type} <span class="muted">[${a.severity}]</span><br><span class="muted">→ ${a.recommended_action}</span></div>`;
+    }
+
+    // ---- controls ----
+    $("startBtn").onclick = () => {
+      if (!ws || ws.readyState !== 1) return;
+      running = !running;
+      $("startBtn").classList.toggle("active", running);
+      $("startBtn").textContent = running ? "⏸ Pause agent" : "▶ Start agent";
+      if (running) { stopGravity(); observe(); } else { startGravity(); }
+    };
+    $("resetBtn").onclick = () => { game.reset(); draw(); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "reset" })); };
+    $("wScripted").onclick = () => ws && ws.send(JSON.stringify({ type: "set_worker", worker: "scripted" }));
+    $("wClaude").onclick = () => ws && ws.send(JSON.stringify({ type: "set_worker", worker: "claude" }));
+
+    draw(); startGravity(); connect();
   </script>
 </body>
 </html>
