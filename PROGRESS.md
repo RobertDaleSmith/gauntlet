@@ -30,11 +30,17 @@ Legend: `[x]` built & tested · `[ ]` not built yet.
 - [x] **ClaudeWorker.decide** — Haiku 4.5, structured-output `{buttons, hold_frames}`,
       feedback in prompt, injectable client, mock-based test
 - [x] **WebSocketGameAdapter** — `GameAdapter` over a `Transport`; drop-in (loop-compat test)
-- [ ] **WS protocol** in `server/app.py` — browser sends game state; harness sends actions;
-      stream `intent` / `checkpoint` / `alarm` / `guardrail` events to the dashboard
-- [ ] **jsnes integration** (`index.html`) — load a (free/homebrew) ROM, expose RAM (x/score/lives),
-      accept button input from WS. NOTE: do not commit a copyrighted Mario ROM — load from a path/env
+- [x] **Tetris game** (custom, `server/static/tetris.js`) — canvas render (the video the agent
+      watches), controller input, ground-truth `state()` (board/score/lines/level/stack_height/holes);
+      human-playable. Replaces the ROM/jsnes path — no legal issue, we own the state API.
+- [ ] **Tetris checkpoints** — `LINES_CLEARED`, `STACK_HEIGHT_SAFE`, `NOT_GAME_OVER`, `NO_NEW_HOLES`;
+      retire the Mario `ForwardProgress`/`StillAlive` defaults + update `FakeGameAdapter` to a Tetris sim
+- [ ] **WS protocol** in `server/app.py` — browser sends the rendered FRAME (base64) + ground-truth
+      state; harness sends controller actions; stream intent/checkpoint/alarm/guardrail to the dashboard
+- [ ] **Vision agent** — `ClaudeWorker` takes the frame as image input (agent sees pixels, like a
+      human); the harness keeps ground-truth state only for grading, never feeds it to the agent
 - [ ] **Dashboard rendering** — live worker, agent intent, checkpoints (green/red), alarms, guardrail blocks
+- [ ] **Update docs** — `ARCHITECTURE.md` + planning doc to the Tetris + vision-first design
 - [ ] **Replay** — endpoint + UI to scrub a finished run from SQLite (`load_state` / `replay`)
 - [ ] **Human escalation UI** — `STOP` state surfaces a prompt to the operator
 - [ ] **Live worker swap** (bonus) — control to swap scripted ↔ claude mid-run

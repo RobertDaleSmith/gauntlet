@@ -10,7 +10,6 @@ from pathlib import Path
 
 try:
     from fastapi import FastAPI, WebSocket
-    from fastapi.responses import FileResponse
     from fastapi.staticfiles import StaticFiles
 except ModuleNotFoundError:  # fastapi optional until server work begins
     FastAPI = None  # type: ignore
@@ -23,19 +22,18 @@ def create_app():
         raise RuntimeError("fastapi not installed — pip install -r requirements.txt")
 
     app = FastAPI(title="Gauntlet — Joypad Harness")
-    app.mount("/static", StaticFiles(directory=STATIC), name="static")
-
-    @app.get("/")
-    def index():
-        return FileResponse(STATIC / "index.html")
 
     @app.websocket("/ws")
     async def ws(socket: WebSocket):
         await socket.accept()
-        # TODO(ralph): WS protocol — browser sends game state, harness sends
-        # actions; stream checkpoint/alarm/guardrail events to the dashboard.
+        # TODO(ralph): WS protocol — browser sends rendered frame + ground-truth
+        # state; harness sends controller actions; stream checkpoint/alarm/
+        # guardrail/intent events to the dashboard.
         await socket.close()
 
+    # Serve the game + dashboard at root (index.html uses relative paths, so it
+    # works the same opened as a file or served here).
+    app.mount("/", StaticFiles(directory=STATIC, html=True), name="static")
     return app
 
 

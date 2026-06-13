@@ -6,28 +6,64 @@
   <style>
     body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background:#0a0a0a; color:#eee; }
     .wrap { display: grid; grid-template-columns: 1fr 1fr; height: 100vh; }
-    .game, .feed { padding: 16px; overflow:auto; }
-    .game { border-right: 1px solid #2a2a2a; display:flex; align-items:center; justify-content:center; }
-    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .1em; color:#888; }
+    .game { border-right: 1px solid #2a2a2a; display:flex; gap:24px; align-items:center; justify-content:center; }
+    .feed { padding: 20px; overflow:auto; }
+    canvas { background:#0e0e0e; border:1px solid #2a2a2a; border-radius:6px; }
+    .stats div { margin: 8px 0; color:#bbb; font-size:14px; letter-spacing:.04em; }
+    .stats b { color:#fff; font-size:18px; }
+    .hint { margin-top:18px; color:#666; font-size:12px; max-width:140px; line-height:1.5; }
+    h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .1em; color:#888; margin: 18px 0 6px; }
     .pass { color:#34D399; } .fail { color:#FF4D4D; } .alarm { color:#FFB020; }
   </style>
 </head>
 <body>
   <div class="wrap">
     <div class="game">
-      <!-- TODO(ralph): mount jsnes canvas here; load a Mario ROM -->
-      <div>🎮 game canvas (jsnes) — TODO</div>
+      <canvas id="screen" width="240" height="480"></canvas>
+      <div class="stats">
+        <div>SCORE <b id="score">0</b></div>
+        <div>LINES <b id="lines">0</b></div>
+        <div>LEVEL <b id="level">1</b></div>
+        <div>NEXT <b id="next">—</b></div>
+        <div>HEIGHT <b id="height">0</b></div>
+        <div class="hint">← → move · ↑ rotate · ↓ soft drop · space hard drop</div>
+      </div>
     </div>
     <div class="feed">
-      <h2>Worker</h2><div id="worker">—</div>
+      <h2>Worker</h2><div id="worker">— (harness not connected yet)</div>
       <h2>Agent intent</h2><div id="intent">—</div>
       <h2>Checkpoints</h2><div id="checkpoints">—</div>
       <h2>Alarms</h2><div id="alarms">—</div>
       <h2>Guardrails</h2><div id="guardrails">—</div>
     </div>
   </div>
+
+  <script src="tetris.js"></script>
   <script>
-    // TODO(ralph): open WebSocket to /ws, render the live event feed.
+    const game = new Tetris();
+    const ctx = document.getElementById("screen").getContext("2d");
+    window.GAME = game; // handle for the WS bridge (built next)
+
+    const $ = (id) => document.getElementById(id);
+    function draw() {
+      game.render(ctx);
+      const s = game.state();
+      $("score").textContent = s.score;
+      $("lines").textContent = s.lines;
+      $("level").textContent = s.level;
+      $("next").textContent = s.next;
+      $("height").textContent = s.stack_height;
+    }
+
+    document.addEventListener("keydown", (e) => {
+      const map = { ArrowLeft: "LEFT", ArrowRight: "RIGHT", ArrowUp: "ROTATE", ArrowDown: "DOWN", " ": "DROP" };
+      const btn = map[e.key];
+      if (btn) { e.preventDefault(); game.input(btn); draw(); }
+      if (e.key.toLowerCase() === "r" && game.gameOver) { game.reset(); draw(); }
+    });
+
+    setInterval(() => { game.tick(); draw(); }, 700); // gravity
+    draw();
   </script>
 </body>
 </html>
