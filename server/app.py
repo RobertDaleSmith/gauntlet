@@ -51,6 +51,10 @@ def _make_worker(name: str, model: str | None = None, perception: str | None = N
         from workers.heuristic import HeuristicWorker
 
         return HeuristicWorker()
+    if name == "sloppy":
+        from workers.sloppy import SloppyWorker
+
+        return SloppyWorker()
     return ScriptedWorker()
 
 

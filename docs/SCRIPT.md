@@ -58,25 +58,27 @@ The goal is to recognize when it's failing and know when to stop.
 
 ## 4. Recovery Worker
 
-Stopping is useful. Recovery is the next layer.
+Stopping is useful. Recovery is better.
 
 This time recovery is enabled.
 
-When the primary worker starts failing, the harness doesn't give up right away. It automatically swaps in a backup worker to try to save the run.
+Watch this agent. It stacks neatly, but it ignores the right side of the board, so it can never complete a line. The stack just climbs.
 
-And the harness doesn't care what that worker is.
+The harness sees the danger building, and automatically swaps in a backup worker.
 
-It could be a language model.
+The backup uses the whole board. It fills the abandoned columns, clears the backlog, and the stack drops back to safety. Then it hands control back to the primary.
+
+And the harness doesn't care what that backup is.
 
 A heuristic bot.
+
+A language model.
 
 A future game-playing model.
 
 As long as it implements the interface, the harness can manage it.
 
-This board is already too far gone to rescue, so when the backup can't recover it either, the harness escalates to a human.
-
-Swap first. Escalate only as a last resort. Layered defense, not a single off switch.
+The harness isn't just catching failure. It's actively recovering from it.
 
 ---
 

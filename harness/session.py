@@ -26,6 +26,10 @@ class HarnessSession:
             material=MaterialHandler(db_path),
             alarms=AlarmBus(),
             recovery_worker=HeuristicWorker(),
+            # The browser steps once per button press, so a recovery worker needs
+            # many steps just to walk a piece to the abandoned columns and start
+            # clearing. Give it room to actually dig out before escalating.
+            recovery_budget=80,
         )
         self._events = []
         self.loop.alarms.subscribe(self._events.append)
