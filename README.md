@@ -89,4 +89,4 @@ harness governing a *competent* agent; the LLM shows it governing a *real* one.
 - [x] Project repo
 - [ ] Deployed Harness URL
 - [x] `HARNESS.md` — architecture & design
-- [ ] 5-minute demo video
+- [x] Demo video — [docs/demo.mp4](docs/demo.mp4)
