@@ -48,7 +48,7 @@ Legend: `[x]` built & tested · `[ ]` not built yet.
 - [ ] **Update docs** — `ARCHITECTURE.md` + planning doc to the Tetris + vision-first design
 - [ ] **Replay** — endpoint + UI to scrub a finished run from SQLite (`load_state` / `replay`)
 - [ ] **Human escalation UI** — `STOP` state surfaces a prompt to the operator
-- [ ] **Live worker swap** (bonus) — control to swap scripted ↔ claude mid-run
+- [x] **Live worker swap** (bonus) — swap scripted ↔ heuristic ↔ claude mid-run; verified live
 - [ ] **HARNESS.md** — expand `ARCHITECTURE.md` into the named Saturday deliverable
 - [ ] **Run scripts / deploy** — Makefile or run.sh; deploy config for the live URL
 

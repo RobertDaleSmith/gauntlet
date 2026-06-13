@@ -15,31 +15,45 @@ distinct component separate from the worker agent:
 
 ## The Joypad Harness
 
-Gauntlet's domain is **AI game-playing agents**. The worker plays a game through
-a controller interface; the harness governs it — validating controller inputs,
-measuring real progress, carrying game state in and out, and raising structured
-alarms when the agent gets stuck. When a checkpoint fails, the harness feeds
-corrective feedback back into the agent, and the agent changes what it does.
+Gauntlet governs an **AI game-playing agent that plays like a human** — it sees
+the rendered screen (pixels) and presses controller buttons. The harness decides
+which inputs are legal, measures real progress, carries game state in and out,
+and raises structured alarms. When a checkpoint fails it feeds corrective
+feedback back to the agent; on repeated failure it stops and asks a human.
 
-Any worker that implements `decide(state) -> action` can be dropped in — Claude,
-GPT, a local model, or a scripted bot — with no changes to the harness.
+Any worker implementing `decide(state, feedback) -> action` drops in with no
+harness changes. Three ship today: **scripted** (reckless baseline — demos
+escalation), **heuristic** (a real Tetris AI), and **claude** (vision — sees the
+frame as an image). Swap them live from the dashboard.
 
-Demo target: an agent playing Super Mario in a browser NES emulator, with the
-harness driving the controller, scoring progress, and escalating to a human (or
-swapping in a recovery worker) when it can't move forward.
+Demo domain: **Tetris** (a custom browser game), chosen because its forgiving
+cadence lets a vision-LLM actually play by looking at the screen.
+
+## Run it
+
+```bash
+uv venv .venv && uv pip install --python .venv -r requirements.txt
+.venv/bin/python -m pytest -q                 # 30+ tests (the verification hook)
+./run.sh                                       # serve at http://127.0.0.1:8000
+```
+
+Open the URL, press **Start**, and watch the four pillars fire next to the game.
+The Claude (vision) worker needs `ANTHROPIC_API_KEY`; scripted/heuristic don't.
 
 ## Status
 
-🚧 In planning. Architecture locked.
+🚧 Building. Core harness + live dashboard working; agent plays Tetris under the
+four pillars with live worker-swap.
 
-- [`ARCHITECTURE.md`](ARCHITECTURE.md) — design source of truth
+- [`HARNESS.md`](HARNESS.md) — architecture & design (the as-built system)
+- [`PROGRESS.md`](PROGRESS.md) — build checklist
 - [`docs/Harness_Planning.pdf`](docs/Harness_Planning.pdf) — 1-page planning doc (source: [`docs/Harness_Planning.md`](docs/Harness_Planning.md))
 - [`docs/24-hour Build Challenge.pdf`](docs/24-hour%20Build%20Challenge.pdf) — challenge spec
 
 ## Deliverables
 
 - [x] 1-page Harness Planning Document (Friday 11:30 PM)
-- [ ] Project repo URL (Saturday 4:30 PM)
+- [x] Project repo URL (Saturday 4:30 PM)
 - [ ] Deployed Harness URL (Saturday 4:30 PM)
-- [ ] `HARNESS.md` — architecture and design documentation (Saturday 4:30 PM)
+- [x] `HARNESS.md` — architecture and design documentation (Saturday 4:30 PM)
 - [ ] 5-minute demo video (Saturday 4:30 PM)
