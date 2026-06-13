@@ -239,6 +239,14 @@
       $("startBtn").classList.remove("active");
       $("startBtn").textContent = "▶ Start agent";
       game.reset(); draw(); startGravity();
+      // Clear the harness panel (right column) so it doesn't keep showing the
+      // previous run's checkpoints, alarms, and intent after a reset.
+      $("worker").textContent = workerLabel(currentWorker.worker, currentWorker.model, currentWorker.perception);
+      $("intent").textContent = "—";
+      $("checkpoints").innerHTML = '<span class="muted">—</span>';
+      $("alarms").innerHTML = '<span class="muted">—</span>';
+      $("guardrails").innerHTML = '<span class="muted">—</span>';
+      setConn("off", "reset — press Start");
       if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "reset" }));
     };
     let recoveryOn = true;
