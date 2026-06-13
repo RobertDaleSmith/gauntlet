@@ -97,3 +97,19 @@ class WebSocketGameAdapter:
 
     def reset(self) -> dict:
         return self.transport.request({"type": "reset"})
+
+
+class NullAdapter:
+    """No-op adapter for when an external executor (the browser) drives the game.
+
+    The harness uses loop.decide()/observe() directly; execute() is never called.
+    """
+
+    def read_state(self) -> dict:
+        return {}
+
+    def execute(self, action: Action, state: GameState) -> dict:
+        return {}
+
+    def reset(self) -> None:
+        pass

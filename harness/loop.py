@@ -66,22 +66,21 @@ class HarnessLoop:
         self.state = self.material.normalize(self.adapter.read_state())
         self._feedback: str | None = None
         self._consecutive_fails = 0
+        self._last_action: Action | None = None
 
-    def step(self) -> list[CheckpointResult]:
-        if self.status != "RUNNING":
-            return []
+    def decide(self, prev: GameState) -> Action | None:
+        """Guardrails pillar: get a worker action that passes every declared rule.
 
-        prev = self.state
+        Returns None (and sets STOP) if the worker can't produce a legal action
+        within the retry budget. Reusable by both step() and the WS server.
+        """
         feedback = self._feedback
-
-        # Guardrails: validate the proposed action before it reaches the game.
-        action: Action | None = None
         for _ in range(self.max_guardrail_retries):
             candidate = self.worker.decide(prev, feedback)
             verdict = self.guardrails.validate(candidate, prev)
             if verdict.allowed:
-                action = candidate
-                break
+                self._last_action = candidate
+                return candidate
             self.alarms.emit(
                 Alarm(
                     "GUARDRAIL_BLOCKED",
@@ -91,20 +90,25 @@ class HarnessLoop:
                 )
             )
             feedback = f"action blocked by {verdict.guardrail}: {verdict.reason}"
-        if action is None:
-            self.alarms.emit(
-                Alarm(
-                    "GUARDRAIL_DEADLOCK",
-                    Severity.CRITICAL,
-                    {"retries": self.max_guardrail_retries},
-                    "stop and request human intervention",
-                )
+        self.alarms.emit(
+            Alarm(
+                "GUARDRAIL_DEADLOCK",
+                Severity.CRITICAL,
+                {"retries": self.max_guardrail_retries},
+                "stop and request human intervention",
             )
-            self.status = "STOP"
-            return []
+        )
+        self.status = "STOP"
+        return None
 
-        # Execute the window, capture + normalize the new state.
-        new = self.material.normalize(self.adapter.execute(action, prev))
+    def observe(
+        self, prev: GameState, new: GameState, action: Action
+    ) -> list[CheckpointResult]:
+        """Checkpoints + alarms pillars: grade the new state, update feedback.
+
+        Reusable by both step() (local adapter) and the WS server (browser is the
+        executor — it reports `new` back).
+        """
         results = [c.evaluate(prev, new) for c in self.checkpoints]
         self.material.persist(self.run_id, new.frame, action, new, results)
         self.state = new
@@ -161,6 +165,17 @@ class HarnessLoop:
             self._feedback = None
 
         return results
+
+    def step(self) -> list[CheckpointResult]:
+        """One full local step: decide -> execute via adapter -> observe."""
+        if self.status != "RUNNING":
+            return []
+        prev = self.state
+        action = self.decide(prev)
+        if action is None:
+            return []
+        new = self.material.normalize(self.adapter.execute(action, prev))
+        return self.observe(prev, new, action)
 
     def run(self, max_steps: int = 100) -> None:
         for _ in range(max_steps):
