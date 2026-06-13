@@ -1,7 +1,22 @@
 """Hero beat: reckless stacking -> alarm + feedback -> deliberate placement clears."""
 from harness.adapters import FakeTetrisAdapter
 from harness.loop import HarnessLoop
+from harness.types import Action
 from workers.scripted import ScriptedWorker
+
+
+class _BadWorker:
+    name = "bad"
+
+    def decide(self, state, feedback):
+        return Action(("LEFT", "RIGHT"), 4)  # always illegal (opposing inputs)
+
+
+def test_guardrail_deadlock_stops_and_alarms():
+    loop = HarnessLoop(FakeTetrisAdapter(), _BadWorker())
+    loop.step()
+    assert loop.status == "STOP"
+    assert any(a.type == "GUARDRAIL_DEADLOCK" for a in loop.alarms.history)
 
 
 def test_feedback_loop_recovers_from_high_stack():
