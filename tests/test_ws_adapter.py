@@ -1,15 +1,15 @@
 """WebSocketGameAdapter is a drop-in GameAdapter (no harness changes)."""
-from harness.adapters import FakeGameAdapter, WebSocketGameAdapter
+from harness.adapters import FakeTetrisAdapter, WebSocketGameAdapter
 from harness.loop import HarnessLoop
 from harness.types import Action
 from workers.scripted import ScriptedWorker
 
 
 class RecordingTransport:
-    """Records sent messages; delegates to a FakeGameAdapter for realistic state."""
+    """Records sent messages; delegates to a FakeTetrisAdapter for real state."""
 
     def __init__(self):
-        self.adapter = FakeGameAdapter()
+        self.adapter = FakeTetrisAdapter()
         self.sent = []
 
     def request(self, message: dict) -> dict:
@@ -31,14 +31,14 @@ def test_adapter_sends_typed_messages():
     t = RecordingTransport()
     a = WebSocketGameAdapter(t)
     a.read_state()
-    a.execute(Action(("RIGHT", "A"), 30), None)
+    a.execute(Action(("LEFT", "DROP"), 4), None)
     assert t.sent[0]["type"] == "read_state"
-    assert t.sent[1] == {"type": "execute", "buttons": ["RIGHT", "A"], "hold_frames": 30}
+    assert t.sent[1] == {"type": "execute", "buttons": ["LEFT", "DROP"], "hold_frames": 4}
 
 
 def test_ws_adapter_is_loop_compatible():
-    # Same loop, same worker — only the adapter changed. Hero beat still clears.
+    # Same loop, same worker — only the adapter changed. Hero beat still works.
     loop = HarnessLoop(WebSocketGameAdapter(RecordingTransport()), ScriptedWorker())
-    loop.run(max_steps=20)
-    assert loop.state.x > FakeGameAdapter.PIPE_X + 10
+    loop.run(max_steps=30)
+    assert loop.state.lines >= 1
     assert loop.status == "RUNNING"

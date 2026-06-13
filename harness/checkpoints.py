@@ -1,7 +1,10 @@
 """✅ Checkpoints pillar — explicit pass/fail evaluation of progress.
 
-Each checkpoint reads game state (objective, from RAM — no fuzzy judging) and
+Each checkpoint reads ground-truth game state (objective — no fuzzy judging) and
 returns a pass/fail result. Results are persisted by the material handler.
+
+These are the Tetris checkpoints; swap them out and the same harness governs a
+different game.
 """
 from __future__ import annotations
 
@@ -27,63 +30,55 @@ class Checkpoint(Protocol):
     def evaluate(self, prev: GameState, new: GameState) -> CheckpointResult: ...
 
 
-class ForwardProgress:
-    name = "FORWARD_PROGRESS"
+class StackHeightSafe:
+    """Primary danger checkpoint — fails when the stack climbs too high."""
 
-    def __init__(self, min_delta: int = 5) -> None:
-        self.min_delta = min_delta
+    name = "STACK_HEIGHT_SAFE"
 
-    def evaluate(self, prev: GameState, new: GameState) -> CheckpointResult:
-        delta = new.x - prev.x
-        return CheckpointResult(
-            self.name, delta >= self.min_delta, f"x {prev.x}->{new.x} (Δ{delta})"
-        )
-
-
-class StillAlive:
-    name = "STILL_ALIVE"
+    def __init__(self, danger: int = 12) -> None:
+        self.danger = danger
 
     def evaluate(self, prev: GameState, new: GameState) -> CheckpointResult:
         return CheckpointResult(
-            self.name, new.lives >= prev.lives, f"lives {prev.lives}->{new.lives}"
+            self.name,
+            new.stack_height <= self.danger,
+            f"height {new.stack_height} (danger {self.danger})",
         )
 
 
-class ScoreNonDecreasing:
-    name = "SCORE_NON_DECREASING"
+class NotGameOver:
+    name = "NOT_GAME_OVER"
+
+    def evaluate(self, prev: GameState, new: GameState) -> CheckpointResult:
+        return CheckpointResult(self.name, not new.game_over, f"game_over={new.game_over}")
+
+
+class NoNewHoles:
+    name = "NO_NEW_HOLES"
 
     def evaluate(self, prev: GameState, new: GameState) -> CheckpointResult:
         return CheckpointResult(
-            self.name, new.score >= prev.score, f"score {prev.score}->{new.score}"
+            self.name, new.holes <= prev.holes, f"holes {prev.holes}->{new.holes}"
         )
 
 
-class LevelAdvanced:
-    name = "LEVEL_ADVANCED"
+class LinesMilestone:
+    """Gate checkpoint — passes once cleared lines reach a threshold (not default)."""
 
-    def evaluate(self, prev: GameState, new: GameState) -> CheckpointResult:
-        return CheckpointResult(
-            self.name, new.level >= prev.level, f"level {prev.level}->{new.level}"
-        )
-
-
-class ScoreMilestone:
-    """Gate checkpoint — passes once score reaches a threshold (not a default)."""
-
-    name = "SCORE_MILESTONE"
+    name = "LINES_MILESTONE"
 
     def __init__(self, threshold: int) -> None:
         self.threshold = threshold
 
     def evaluate(self, prev: GameState, new: GameState) -> CheckpointResult:
         return CheckpointResult(
-            self.name, new.score >= self.threshold, f"score {new.score} / {self.threshold}"
+            self.name, new.lines >= self.threshold, f"lines {new.lines} / {self.threshold}"
         )
 
 
+# Primary checkpoint first — the loop escalates on the first one by default.
 DEFAULT_CHECKPOINTS: list[Checkpoint] = [
-    ForwardProgress(),
-    StillAlive(),
-    ScoreNonDecreasing(),
-    LevelAdvanced(),
+    StackHeightSafe(danger=12),
+    NotGameOver(),
+    NoNewHoles(),
 ]

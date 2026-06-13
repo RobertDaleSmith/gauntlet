@@ -50,7 +50,7 @@ class MaxHoldFrames:
 
 class NoImpossibleCombos:
     name = "NO_IMPOSSIBLE_COMBOS"
-    OPPOSITES = (("LEFT", "RIGHT"), ("UP", "DOWN"))
+    OPPOSITES = (("LEFT", "RIGHT"),)
 
     def check(self, action: Action, state: GameState) -> Verdict:
         held = set(action.buttons)

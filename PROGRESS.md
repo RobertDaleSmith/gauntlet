@@ -33,8 +33,9 @@ Legend: `[x]` built & tested · `[ ]` not built yet.
 - [x] **Tetris game** (custom, `server/static/tetris.js`) — canvas render (the video the agent
       watches), controller input, ground-truth `state()` (board/score/lines/level/stack_height/holes);
       human-playable. Replaces the ROM/jsnes path — no legal issue, we own the state API.
-- [ ] **Tetris checkpoints** — `LINES_CLEARED`, `STACK_HEIGHT_SAFE`, `NOT_GAME_OVER`, `NO_NEW_HOLES`;
-      retire the Mario `ForwardProgress`/`StillAlive` defaults + update `FakeGameAdapter` to a Tetris sim
+- [x] **Tetris checkpoints** — `StackHeightSafe`, `NotGameOver`, `NoNewHoles`, `LinesMilestone`;
+      Mario checkpoints/adapter retired; `FakeTetrisAdapter` sim; loop generalized (game-agnostic
+      feedback + escalation + game-over); workers + state pivoted to Tetris; 21 tests green
 - [ ] **WS protocol** in `server/app.py` — browser sends the rendered FRAME (base64) + ground-truth
       state; harness sends controller actions; stream intent/checkpoint/alarm/guardrail to the dashboard
 - [ ] **Vision agent** — `ClaudeWorker` takes the frame as image input (agent sees pixels, like a

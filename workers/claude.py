@@ -14,10 +14,11 @@ from harness.types import Action, GameState
 MODEL = "claude-haiku-4-5"
 
 SYSTEM = (
-    "You play NES games through a controller. Given the current game state, "
-    "return the next action: which buttons to hold and for how many frames. "
-    "Move RIGHT to make forward progress; press A to jump over obstacles. "
-    "If feedback says you are stuck, change your approach (e.g. add a jump)."
+    "You are playing Tetris through a controller. You SEE the board as an image. "
+    "Return the next controller action: which buttons to hold and for how long. "
+    "Buttons: LEFT, RIGHT, ROTATE, DOWN, DROP. Keep the stack low and flat, avoid "
+    "holes, and clear lines. If feedback says the stack is too high, reposition "
+    "the piece (LEFT/RIGHT/ROTATE) to fill gaps rather than dropping straight down."
 )
 
 ACTION_SCHEMA = {
@@ -46,12 +47,9 @@ class ClaudeWorker:
         return self.client
 
     def _prompt(self, state: GameState, feedback: str | None) -> str:
-        return (
-            f"state: x={state.x} score={state.score} lives={state.lives} "
-            f"level={state.level} frame={state.frame}\n"
-            f"feedback: {feedback or 'none'}\n"
-            "Return the next action."
-        )
+        # The agent reasons over the image; this text only carries the coach's
+        # feedback hint (never the ground-truth board the referee uses to grade).
+        return f"feedback: {feedback or 'none'}\nReturn the next controller action."
 
     def decide(self, state: GameState, feedback: str | None) -> Action:
         resp = self._ensure_client().messages.create(

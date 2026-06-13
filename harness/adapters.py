@@ -11,30 +11,37 @@ from typing import Protocol
 from .types import Action, GameState
 
 
-class FakeGameAdapter:
-    """Mario-ish sim: advances on RIGHT, stuck at a pipe until JUMP (A).
+class FakeTetrisAdapter:
+    """Tetris sim for tests/offline dev — no browser needed.
 
-    Encodes the demo's hero beat so the feedback loop is testable without an
-    emulator: stuck -> hint -> adapt (press A) -> clears the pipe.
+    Encodes the hero beat: a reckless DROP raises the stack; once the harness
+    feeds back that the stack is too high, a thoughtful placement (repositioning
+    with LEFT/RIGHT before dropping) clears a line and lowers it. Tops out at 20.
     """
 
-    PIPE_X = 400
+    DANGER = 12
+    TOP_OUT = 20
 
     def __init__(self) -> None:
         self.reset()
 
     def reset(self) -> None:
         self._frame = 0
-        self._x = 380
+        self._height = 0
+        self._lines = 0
         self._score = 0
-        self._lives = 3
+        self._holes = 0
+        self._over = False
 
     def _raw(self) -> dict:
         return {
             "frame": self._frame,
-            "x": self._x,
+            "stack_height": self._height,
+            "lines": self._lines,
             "score": self._score,
-            "lives": self._lives,
+            "holes": self._holes,
+            "game_over": self._over,
+            "level": 1,
         }
 
     def read_state(self) -> dict:
@@ -43,15 +50,20 @@ class FakeGameAdapter:
     def execute(self, action: Action, state: GameState) -> dict:
         self._frame += action.hold_frames
         held = set(action.buttons)
-        at_pipe = self.PIPE_X - 10 <= self._x <= self.PIPE_X + 10
-        if at_pipe:
-            if "A" in held:  # jump clears the pipe
-                self._x += 60
-                self._score += 100
-            # RIGHT alone at the pipe: no progress (stuck)
-        elif "RIGHT" in held:
-            self._x += 7
+        thoughtful = ("LEFT" in held or "RIGHT" in held) and self._height > 0
+        if thoughtful:  # placed deliberately -> clears a line
+            self._height = max(0, self._height - 3)
+            self._lines += 1
+            self._score += 100
+        else:  # reckless drop -> stack climbs
+            self._height += 2
+        if self._height >= self.TOP_OUT:
+            self._over = True
         return self._raw()
+
+
+# Back-compat alias (the protocol is the same).
+FakeGameAdapter = FakeTetrisAdapter
 
 
 class Transport(Protocol):

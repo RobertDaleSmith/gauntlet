@@ -1,7 +1,8 @@
-"""A rule-based worker. No LLM — fast iteration + the live-swap demo bonus.
+"""A rule-based Tetris worker. No LLM — fast iteration + the live-swap demo bonus.
 
-Default: walk right. When the harness feeds back a "stuck / try jump" hint,
-add the A button. This is the minimal agent that exercises the feedback loop.
+Default: drop pieces straight down (reckless — the stack climbs). When the
+harness feeds back that the stack is too high, place deliberately (reposition,
+then drop) to clear lines. This minimal agent exercises the feedback loop.
 """
 from __future__ import annotations
 
@@ -12,6 +13,6 @@ class ScriptedWorker:
     name = "scripted"
 
     def decide(self, state: GameState, feedback: str | None) -> Action:
-        if feedback and ("jump" in feedback.lower() or "stuck" in feedback.lower()):
-            return Action(("RIGHT", "A"), 30)
-        return Action(("RIGHT",), 30)
+        if feedback and ("height" in feedback.lower() or "stack" in feedback.lower()):
+            return Action(("LEFT", "DROP"), 4)  # deliberate placement -> clears
+        return Action(("DROP",), 4)  # reckless straight drop

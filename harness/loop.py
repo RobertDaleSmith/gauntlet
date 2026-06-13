@@ -44,6 +44,7 @@ class HarnessLoop:
         alarms: AlarmBus | None = None,
         max_guardrail_retries: int = 3,
         escalate_after: int = 3,
+        escalation_checkpoint: str | None = None,
         run_id: str | None = None,
     ) -> None:
         self.adapter = adapter
@@ -54,6 +55,11 @@ class HarnessLoop:
         self.alarms = alarms or AlarmBus()
         self.max_guardrail_retries = max_guardrail_retries
         self.escalate_after = escalate_after
+        # Which checkpoint's repeated failure escalates to a human STOP.
+        # Defaults to the first (primary) checkpoint.
+        self.escalation_checkpoint = escalation_checkpoint or (
+            self.checkpoints[0].name if self.checkpoints else None
+        )
         self.run_id = run_id or uuid.uuid4().hex
 
         self.status = "RUNNING"  # RUNNING | STOP
@@ -103,20 +109,41 @@ class HarnessLoop:
         self.material.persist(self.run_id, new.frame, action, new, results)
         self.state = new
 
-        # Behavior-change loop keyed on forward progress.
-        progress = next((r for r in results if r.name == "FORWARD_PROGRESS"), None)
-        if progress is not None and not progress.passed:
-            self._consecutive_fails += 1
-            self._feedback = (
-                f"checkpoint {progress.name} failed: {progress.detail}. "
-                "An obstacle is likely blocking you — try JUMP (press A)."
+        # Terminal failure: the game ended.
+        if new.game_over:
+            self.alarms.emit(
+                Alarm(
+                    "GAME_OVER",
+                    Severity.CRITICAL,
+                    {"score": new.score, "lines": new.lines},
+                    "reset the run or request human intervention",
+                )
             )
-            if self._consecutive_fails >= self.escalate_after:
+            self.status = "STOP"
+            return results
+
+        # Behavior-change loop: failed checkpoints become feedback for the agent.
+        fails = [r for r in results if not r.passed]
+        primary_failed = any(
+            not r.passed and r.name == self.escalation_checkpoint for r in results
+        )
+        self._consecutive_fails = self._consecutive_fails + 1 if primary_failed else 0
+
+        if fails:
+            self._feedback = (
+                "checkpoints failed: "
+                + "; ".join(f"{r.name} ({r.detail})" for r in fails)
+                + ". Adjust your strategy."
+            )
+            if primary_failed and self._consecutive_fails >= self.escalate_after:
                 self.alarms.emit(
                     Alarm(
-                        "AGENT_STUCK",
+                        "ESCALATE",
                         Severity.CRITICAL,
-                        {"frames_stuck": self._consecutive_fails, "x": new.x},
+                        {
+                            "checkpoint": self.escalation_checkpoint,
+                            "consecutive_fails": self._consecutive_fails,
+                        },
                         "request human intervention",
                     )
                 )
@@ -124,14 +151,13 @@ class HarnessLoop:
             else:
                 self.alarms.emit(
                     Alarm(
-                        "AGENT_STUCK",
+                        "CHECKPOINT_FAILED",
                         Severity.HIGH,
-                        {"frames_stuck": self._consecutive_fails, "x": new.x},
+                        {"failed": [r.name for r in fails], "frame": new.frame},
                         "feed corrective hint to the worker",
                     )
                 )
         else:
-            self._consecutive_fails = 0
             self._feedback = None
 
         return results

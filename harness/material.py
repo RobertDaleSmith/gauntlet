@@ -34,13 +34,15 @@ class MaterialHandler:
         self.conn.commit()
 
     def normalize(self, raw: dict) -> GameState:
-        """Raw emulator RAM dict -> agent-readable GameState."""
+        """Raw game-state dict (from the browser) -> typed GameState."""
         return GameState(
             frame=raw.get("frame", 0),
-            x=raw.get("x", 0),
             score=raw.get("score", 0),
-            lives=raw.get("lives", 3),
-            level=raw.get("level", 0),
+            lines=raw.get("lines", 0),
+            level=raw.get("level", 1),
+            stack_height=raw.get("stack_height", 0),
+            holes=raw.get("holes", 0),
+            game_over=raw.get("game_over", False),
             raw=raw,
         )
 
@@ -59,7 +61,16 @@ class MaterialHandler:
                 run_id,
                 frame,
                 json.dumps({"buttons": list(action.buttons), "hold": action.hold_frames}),
-                json.dumps({"x": state.x, "score": state.score, "lives": state.lives}),
+                json.dumps(
+                    {
+                        "score": state.score,
+                        "lines": state.lines,
+                        "level": state.level,
+                        "stack_height": state.stack_height,
+                        "holes": state.holes,
+                        "game_over": state.game_over,
+                    }
+                ),
                 json.dumps([r.to_dict() for r in results]),
             ),
         )
@@ -91,4 +102,12 @@ class MaterialHandler:
         if row is None:
             return None
         s = json.loads(row["state"])
-        return GameState(frame=frame, x=s["x"], score=s["score"], lives=s["lives"])
+        return GameState(
+            frame=frame,
+            score=s["score"],
+            lines=s["lines"],
+            level=s["level"],
+            stack_height=s["stack_height"],
+            holes=s["holes"],
+            game_over=s["game_over"],
+        )
