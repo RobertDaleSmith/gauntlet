@@ -43,7 +43,7 @@ class HarnessLoop:
         material: MaterialHandler | None = None,
         alarms: AlarmBus | None = None,
         max_guardrail_retries: int = 3,
-        escalate_after: int = 3,
+        escalate_after: int = 2,
         escalation_checkpoint: str | None = None,
         run_id: str | None = None,
     ) -> None:

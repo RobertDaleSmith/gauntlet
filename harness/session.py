@@ -12,14 +12,16 @@ from harness.adapters import NullAdapter
 from harness.alarms import AlarmBus
 from harness.loop import HarnessLoop
 from harness.material import MaterialHandler
-from workers.scripted import ScriptedWorker
+from workers.heuristic import HeuristicWorker
 
 
 class HarnessSession:
     def __init__(self, worker=None, db_path: str = ":memory:") -> None:
+        # Default to the competent worker so "Start" plays well out of the box;
+        # the reckless ScriptedWorker is an explicit choice (demos escalation).
         self.loop = HarnessLoop(
             NullAdapter(),
-            worker or ScriptedWorker(),
+            worker or HeuristicWorker(),
             material=MaterialHandler(db_path),
             alarms=AlarmBus(),
         )
