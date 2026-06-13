@@ -1,0 +1,7 @@
+.venv
+.git
+__pycache__
+*.pyc
+.runs.db
+.gstack
+.DS_Store

@@ -1,0 +1,10 @@
+# Render blueprint — connect the repo at https://render.com and it auto-deploys.
+services:
+  - type: web
+    name: gauntlet-harness
+    runtime: docker
+    plan: free
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: "8000"

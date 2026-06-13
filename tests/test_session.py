@@ -31,3 +31,17 @@ def test_game_over_stops_the_session():
     out = s.step(_state(20, game_over=True, frame=4))
     assert out["type"] == "stopped"
     assert any(a["type"] == "GAME_OVER" for a in out["alarms"])
+
+
+class _BoomWorker:
+    name = "boom"
+
+    def decide(self, state, feedback):
+        raise RuntimeError("no API key")
+
+
+def test_worker_error_fails_safe():
+    s = HarnessSession(worker=_BoomWorker())
+    out = s.step(_state(0))
+    assert out["type"] == "stopped"
+    assert any(a["type"] == "WORKER_ERROR" for a in out["alarms"])

@@ -45,12 +45,14 @@ Legend: `[x]` built & tested · `[ ]` not built yet.
 - [x] **Heuristic worker** — real Tetris placement AI (El-Tetris weights, reads board from state.raw),
       plays well (low/flat, no holes); scripted stays "reckless" to demo escalation. Live worker-swap
       verified (scripted→heuristic). + tests
-- [ ] **Update docs** — `ARCHITECTURE.md` + planning doc to the Tetris + vision-first design
-- [ ] **Replay** — endpoint + UI to scrub a finished run from SQLite (`load_state` / `replay`)
-- [ ] **Human escalation UI** — `STOP` state surfaces a prompt to the operator
+- [x] **HARNESS.md** — as-built architecture deliverable (replaces ARCHITECTURE.md); README updated.
+      (planning PDF left as the Friday submission record; HARNESS.md is canonical for current design)
+- [x] **Replay** — `/api/runs/{id}` endpoint + dashboard playback of persisted board snapshots; verified
+- [x] **Human escalation UI** — STOP banner surfaces `ESCALATE`/`GAME_OVER`; Reset/worker-swap to recover
 - [x] **Live worker swap** (bonus) — swap scripted ↔ heuristic ↔ claude mid-run; verified live
-- [ ] **HARNESS.md** — expand `ARCHITECTURE.md` into the named Saturday deliverable
-- [ ] **Run scripts / deploy** — Makefile or run.sh; deploy config for the live URL
+- [x] **Run script** — `run.sh` (one-command serve)
+- [ ] **Deploy config** — Dockerfile + platform config so the user can publish the live URL
+- [ ] **Demo video** — 5-min walkthrough (manual; needs the user)
 
 ## Ralph loop prompt (copy into the loop)
 ```

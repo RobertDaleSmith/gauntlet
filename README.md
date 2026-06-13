@@ -40,6 +40,18 @@ uv venv .venv && uv pip install --python .venv -r requirements.txt
 Open the URL, press **Start**, and watch the four pillars fire next to the game.
 The Claude (vision) worker needs `ANTHROPIC_API_KEY`; scripted/heuristic don't.
 
+### Deploy
+
+The game runs in the viewer's browser, so the harness is a plain web app — no
+headless browser server-side. Deploy with the included config:
+
+```bash
+fly launch --copy-config --now      # Fly.io (uses Dockerfile + fly.toml)
+# or connect the repo on Render (render.yaml) — auto-builds the Dockerfile
+```
+
+Set `ANTHROPIC_API_KEY` as a secret to enable the vision worker in production.
+
 ## Status
 
 🚧 Building. Core harness + live dashboard working; agent plays Tetris under the
