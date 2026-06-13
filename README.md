@@ -1,71 +1,91 @@
 # Gauntlet
 
-A harness — a framework that an AI agent lives inside.
+**A runtime harness that governs a game-playing AI agent.** The harness is the
+cage the agent lives in: it decides which controller inputs are legal, grades the
+agent's progress, carries game state in and out, and raises structured alarms.
+When the agent fails, the harness feeds corrective feedback, hands off to a
+recovery worker, and escalates to a human when even that can't save the run.
 
-Built for a 24-hour build challenge. The harness provides four pillars, each a
-distinct component separate from the worker agent:
+> Agents focus on tasks. Harnesses focus on constraints. A well-designed harness
+> makes constraint-handling invisible to the agent.
 
-- **Guardrails** — declared constraints on agent behavior
-- **Checkpoints** — explicit pass/fail evaluation of agent outputs
-- **Material handling** — clean interfaces for passing material in and out
-- **Alarms** — structured alerts (type, context, severity, recommended action)
+![Gauntlet dashboard](docs/img/dashboard.png)
 
-> Agents focus on tasks. Harnesses focus on constraints. A well-designed
-> harness makes constraint-handling invisible to the agent.
+## The four pillars (each a separate component, governed apart from the agent)
 
-## The Joypad Harness
+| Pillar | What it does | Code |
+|---|---|---|
+| 🛡️ **Guardrails** | Declared rules on controller input, checked *before* execution | `harness/guardrails.py` |
+| ✅ **Checkpoints** | Explicit pass/fail on real progress (stack height, holes, game-over) | `harness/checkpoints.py` |
+| 📦 **Material handling** | Capture/normalize state, persist every step, replay a run | `harness/material.py` |
+| 🚨 **Alarms** | Structured `{type, severity, context, recommended_action}` | `harness/alarms.py` |
 
-Gauntlet governs an **AI game-playing agent that plays like a human** — it sees
-the rendered screen (pixels) and presses controller buttons. The harness decides
-which inputs are legal, measures real progress, carries game state in and out,
-and raises structured alarms. When a checkpoint fails it feeds corrective
-feedback back to the agent; on repeated failure it stops and asks a human.
+The agent (the **worker**) is deliberately *not* a pillar — it's the thing being
+governed, and it's swappable (`workers/`). The harness only knows one interface:
+`decide(state, feedback) -> action`.
 
-Any worker implementing `decide(state, feedback) -> action` drops in with no
-harness changes. Three ship today: **scripted** (reckless baseline — demos
-escalation), **heuristic** (a real Tetris AI), and **claude** (vision — sees the
-frame as an image). Swap them live from the dashboard.
+## The agents (workers) — swap any of them in live
 
-Demo domain: **Tetris** (a custom browser game), chosen because its forgiving
-cadence lets a vision-LLM actually play by looking at the screen.
+| Worker | What it is | Plays well? |
+|---|---|---|
+| **heuristic** | A real Tetris search AI (El-Tetris), no LLM | Yes — clears lines, stays flat |
+| **claude (state/vision)** | A modern **LLM** driving the controller by reading the board (text) or *seeing the screen* (image) | It's a real AI under governance — imperfect, which is the point |
+| **reckless** | A dumb baseline that stacks recklessly | No — demos the harness catching a bad agent |
+
+The harness governs all three identically. When the LLM (or reckless) gets stuck,
+the harness **hands off to the heuristic recovery worker**, then hands back once
+safe — a real safety-system pattern (capable fallback + human escalation).
+
+Demo domain: **Tetris** (a custom browser game). The game runs in the browser
+(the agent's "world"); the Python harness drives and grades it over WebSocket.
 
 ## Run it
 
 ```bash
 uv venv .venv && uv pip install --python .venv -r requirements.txt
-.venv/bin/python -m pytest -q                 # 30+ tests (the verification hook)
-./run.sh                                       # serve at http://127.0.0.1:8000
+.venv/bin/python -m pytest -q        # 46 tests — the verification hook
+./run.sh                              # serve at http://127.0.0.1:8000
 ```
 
-Open the URL, press **Start**, and watch the four pillars fire next to the game.
-The Claude (vision) worker needs `ANTHROPIC_API_KEY`; scripted/heuristic don't.
+Open the URL, press **Start** (defaults to the heuristic — plays cleanly, no key),
+then swap to the LLM or reckless and watch the four pillars react. The Claude
+worker needs `ANTHROPIC_API_KEY`; heuristic and reckless don't.
 
 ### Deploy
 
 The game runs in the viewer's browser, so the harness is a plain web app — no
-headless browser server-side. Deploy with the included config:
+headless browser server-side.
 
 ```bash
-fly launch --copy-config --now      # Fly.io (uses Dockerfile + fly.toml)
-# or connect the repo on Render (render.yaml) — auto-builds the Dockerfile
+# Render: connect the repo at render.com → New → Blueprint (uses render.yaml)
+# Fly:    fly launch --copy-config --now           (uses Dockerfile + fly.toml)
 ```
 
-Set `ANTHROPIC_API_KEY` as a secret to enable the vision worker in production.
+Set `ANTHROPIC_API_KEY` as a secret to enable the LLM worker in production
+(optional — the heuristic runs with no key).
 
-## Status
+## How the pieces fit
 
-🚧 Building. Core harness + live dashboard working; agent plays Tetris under the
-four pillars with live worker-swap.
+```
+browser (Tetris + dashboard) ⇄ WebSocket ⇄ FastAPI ⇄ HarnessSession
+                                                       ├─ decide():  🛡️ guardrails + worker
+                                                       └─ observe(): ✅ checkpoints 📦 material 🚨 alarms
+```
+Full design: **[HARNESS.md](HARNESS.md)**. Build log: [PROGRESS.md](PROGRESS.md).
 
-- [`HARNESS.md`](HARNESS.md) — architecture & design (the as-built system)
-- [`PROGRESS.md`](PROGRESS.md) — build checklist
-- [`docs/Harness_Planning.pdf`](docs/Harness_Planning.pdf) — 1-page planning doc (source: [`docs/Harness_Planning.md`](docs/Harness_Planning.md))
-- [`docs/24-hour Build Challenge.pdf`](docs/24-hour%20Build%20Challenge.pdf) — challenge spec
+## Honest note on the LLM
+
+An LLM driving Tetris by buttons plays poorly — it buries holes (which are
+permanent in Tetris) and rarely clears lines, regardless of model or perception
+mode. That's not a bug; it's the difficulty of the task. The harness's value is
+exactly this: **governing a real, fallible AI** — grading it, nudging it, handing
+off to a reliable fallback, and escalating to a human. The heuristic shows the
+harness governing a *competent* agent; the LLM shows it governing a *real* one.
 
 ## Deliverables
 
-- [x] 1-page Harness Planning Document (Friday 11:30 PM)
-- [x] Project repo URL (Saturday 4:30 PM)
-- [ ] Deployed Harness URL (Saturday 4:30 PM)
-- [x] `HARNESS.md` — architecture and design documentation (Saturday 4:30 PM)
-- [ ] 5-minute demo video (Saturday 4:30 PM)
+- [x] 1-page Harness Planning Document
+- [x] Project repo
+- [ ] Deployed Harness URL
+- [x] `HARNESS.md` — architecture & design
+- [ ] 5-minute demo video
