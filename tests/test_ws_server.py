@@ -32,3 +32,20 @@ def test_ws_worker_swap():
     with client.websocket_connect("/ws") as ws:
         ws.send_json({"type": "set_worker", "worker": "scripted"})
         assert ws.receive_json() == {"type": "worker_set", "worker": "scripted"}
+
+
+def test_replay_endpoint_returns_persisted_steps(tmp_path):
+    import server.app as appmod
+    appmod.DB_PATH = str(tmp_path / "runs.db")
+    client = TestClient(appmod.create_app())
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"type": "observe", "state": _state(0)})
+        first = ws.receive_json()
+        run_id = first["run_id"]
+        ws.send_json({"type": "observe", "state": _state(2, frame=4)})
+        ws.receive_json()
+    resp = client.get(f"/api/runs/{run_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["run_id"] == run_id
+    assert len(body["steps"]) >= 1

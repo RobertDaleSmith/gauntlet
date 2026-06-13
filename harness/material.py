@@ -69,6 +69,8 @@ class MaterialHandler:
                         "stack_height": state.stack_height,
                         "holes": state.holes,
                         "game_over": state.game_over,
+                        # full board snapshot (when present) enables visual replay
+                        "board": state.raw.get("board"),
                     }
                 ),
                 json.dumps([r.to_dict() for r in results]),

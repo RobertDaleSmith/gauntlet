@@ -15,6 +15,8 @@ except ModuleNotFoundError:  # fastapi optional until server work begins
     FastAPI = None  # type: ignore
 
 STATIC = Path(__file__).parent / "static"
+# File-backed so runs persist for replay across HTTP requests.
+DB_PATH = str(Path(__file__).resolve().parent.parent / ".runs.db")
 
 
 def _make_worker(name: str):
@@ -35,14 +37,20 @@ def create_app():
     if FastAPI is None:
         raise RuntimeError("fastapi not installed — pip install -r requirements.txt")
 
+    from harness.material import MaterialHandler
     from harness.session import HarnessSession
 
     app = FastAPI(title="Gauntlet — Joypad Harness")
 
+    @app.get("/api/runs/{run_id}")
+    def replay(run_id: str):
+        """Replay a finished run from persisted checkpoints (the Material pillar)."""
+        return {"run_id": run_id, "steps": MaterialHandler(DB_PATH).replay(run_id)}
+
     @app.websocket("/ws")
     async def ws(socket: WebSocket):
         await socket.accept()
-        session = HarnessSession()
+        session = HarnessSession(db_path=DB_PATH)
         try:
             while True:
                 msg = await socket.receive_json()
@@ -54,7 +62,7 @@ def create_app():
                     session.set_worker(_make_worker(msg.get("worker", "scripted")))
                     await socket.send_json({"type": "worker_set", "worker": msg.get("worker")})
                 elif kind == "reset":
-                    session = HarnessSession(session.loop.worker)
+                    session = HarnessSession(session.loop.worker, db_path=DB_PATH)
                     await socket.send_json({"type": "reset_ok"})
         except WebSocketDisconnect:
             return

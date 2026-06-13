@@ -11,12 +11,18 @@ from __future__ import annotations
 from harness.adapters import NullAdapter
 from harness.alarms import AlarmBus
 from harness.loop import HarnessLoop
+from harness.material import MaterialHandler
 from workers.scripted import ScriptedWorker
 
 
 class HarnessSession:
-    def __init__(self, worker=None) -> None:
-        self.loop = HarnessLoop(NullAdapter(), worker or ScriptedWorker(), alarms=AlarmBus())
+    def __init__(self, worker=None, db_path: str = ":memory:") -> None:
+        self.loop = HarnessLoop(
+            NullAdapter(),
+            worker or ScriptedWorker(),
+            material=MaterialHandler(db_path),
+            alarms=AlarmBus(),
+        )
         self._events = []
         self.loop.alarms.subscribe(self._events.append)
         self.prev = None
@@ -73,6 +79,7 @@ class HarnessSession:
         self.last_action = action
         return {
             "type": "act",
+            "run_id": self.loop.run_id,
             "worker": self.loop.worker.name,
             "action": {"buttons": list(action.buttons), "hold_frames": action.hold_frames},
             "checkpoints": checkpoints,

@@ -42,6 +42,7 @@
         <div class="controls">
           <button id="startBtn">▶ Start agent</button>
           <button id="resetBtn">⟲ Reset</button>
+          <button id="replayBtn">⏪ Replay last run</button>
           <button id="wScripted" class="active">worker: scripted (reckless)</button>
           <button id="wHeuristic">worker: heuristic</button>
           <button id="wClaude">worker: claude (vision)</button>
@@ -67,7 +68,7 @@
     const game = new Tetris();
     const ctx = document.getElementById("screen").getContext("2d");
     const $ = (id) => document.getElementById(id);
-    let ws = null, running = false, gravity = null;
+    let ws = null, running = false, gravity = null, lastRunId = null;
 
     function draw() {
       game.render(ctx);
@@ -129,6 +130,7 @@
     }
 
     function renderEvents(msg) {
+      if (msg.run_id) lastRunId = msg.run_id;
       if (msg.worker) $("worker").textContent = msg.worker;
       if (msg.action) $("intent").textContent = msg.action.buttons.join(" + ") + "  (" + msg.action.hold_frames + "f)";
       if (msg.checkpoints) {
@@ -156,6 +158,29 @@
       if (running) { stopGravity(); observe(); } else { startGravity(); }
     };
     $("resetBtn").onclick = () => { game.reset(); draw(); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "reset" })); };
+
+    function renderBoard(board) {
+      const C = Tetris.CELL;
+      ctx.fillStyle = "#0e0e0e"; ctx.fillRect(0, 0, Tetris.COLS * C, Tetris.ROWS * C);
+      for (let r = 0; r < board.length; r++)
+        for (let c = 0; c < board[r].length; c++)
+          if (board[r][c]) { ctx.fillStyle = "#5B8DEF"; ctx.fillRect(c * C + 1, r * C + 1, C - 2, C - 2); }
+    }
+    $("replayBtn").onclick = async () => {
+      if (!lastRunId) { setConn(running ? "live" : "off", "no run to replay yet"); return; }
+      running = false; stopGravity();
+      const res = await fetch(`/api/runs/${lastRunId}`);
+      const { steps } = await res.json();
+      setConn("live", `replaying ${steps.length} steps…`);
+      let i = 0;
+      const timer = setInterval(() => {
+        if (i >= steps.length) { clearInterval(timer); setConn("off", "replay done"); return; }
+        const s = steps[i++];
+        if (s.state.board) renderBoard(s.state.board);
+        $("intent").textContent = (s.action.buttons || []).join(" + ");
+        $("checkpoints").innerHTML = s.results.map((c) => `<div class="row ${c.passed ? "pass" : "fail"}">${c.passed ? "✓" : "✗"} ${c.name}</div>`).join("");
+      }, 200);
+    };
     $("wScripted").onclick = () => ws && ws.send(JSON.stringify({ type: "set_worker", worker: "scripted" }));
     $("wHeuristic").onclick = () => ws && ws.send(JSON.stringify({ type: "set_worker", worker: "heuristic" }));
     $("wClaude").onclick = () => ws && ws.send(JSON.stringify({ type: "set_worker", worker: "claude" }));
