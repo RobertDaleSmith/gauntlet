@@ -1,5 +1,7 @@
 # Joypad Harness
 
+▶ **[Watch the demo video](docs/demo.mp4)** (~3.5 min) — the four pillars, human escalation, live dual-worker recovery, and a real LLM driving the controller.
+
 **A runtime harness that governs a game-playing AI agent.** The harness is the
 cage the agent lives in: it decides which controller inputs are legal, grades the
 agent's progress, carries game state in and out, and raises structured alarms.
@@ -9,7 +11,7 @@ recovery worker, and escalates to a human when even that can't save the run.
 > Agents focus on tasks. Harnesses focus on constraints. A well-designed harness
 > makes constraint-handling invisible to the agent.
 
-![Joypad Harness dashboard](docs/img/dashboard.png)
+[![Joypad Harness dashboard](docs/img/dashboard.png)](docs/demo.mp4)
 
 ## The four pillars (each a separate component, governed apart from the agent)
 
