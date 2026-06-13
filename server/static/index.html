@@ -16,6 +16,7 @@
     button { background:#161616; color:#eee; border:1px solid var(--border); border-radius:6px; padding:7px 10px; font-size:12px; cursor:pointer; }
     button:hover { border-color:#444; }
     button.active { border-color:var(--amber); color:var(--amber); }
+    .seclabel { margin:12px 0 2px; color:#777; font-size:10px; text-transform:uppercase; letter-spacing:.1em; }
     .hint { margin-top:8px; color:#666; font-size:11px; max-width:150px; line-height:1.5; }
     h2 { font-size:12px; text-transform:uppercase; letter-spacing:.12em; color:#777; margin:18px 0 7px; }
     .big { font-size:18px; color:#fff; }
@@ -43,9 +44,13 @@
           <button id="startBtn">▶ Start agent</button>
           <button id="resetBtn">⟲ Reset</button>
           <button id="replayBtn">⏪ Replay last run</button>
-          <button id="wScripted">worker: scripted (reckless)</button>
-          <button id="wHeuristic" class="active">worker: heuristic</button>
-          <button id="wClaude">worker: claude (vision)</button>
+          <div class="seclabel">LLM agent — plays by vision</div>
+          <button class="wbtn active" data-worker="claude" data-model="claude-haiku-4-5">Claude Haiku · fast</button>
+          <button class="wbtn" data-worker="claude" data-model="claude-sonnet-4-6">Claude Sonnet</button>
+          <button class="wbtn" data-worker="claude" data-model="claude-opus-4-8">Claude Opus · smartest</button>
+          <div class="seclabel">Baselines — not LLM</div>
+          <button class="wbtn" data-worker="heuristic">Heuristic (search AI)</button>
+          <button class="wbtn" data-worker="scripted">Reckless</button>
         </div>
         <div class="hint">When the agent is paused you can play with the keyboard: ← → move · ↑ rotate · ↓ soft · space drop</div>
       </div>
@@ -105,7 +110,12 @@
     function connect() {
       const proto = location.protocol === "https:" ? "wss" : "ws";
       ws = new WebSocket(`${proto}://${location.host}/ws`);
-      ws.onopen = () => { setConn("live", "connected — press Start"); $("startBtn").disabled = false; };
+      ws.onopen = () => {
+        setConn("live", "connected — press Start");
+        $("startBtn").disabled = false;
+        // LLM first: default the agent to the (fast) Claude vision worker.
+        ws.send(JSON.stringify({ type: "set_worker", worker: "claude", model: "claude-haiku-4-5" }));
+      };
       ws.onclose = () => { setConn("off", "harness offline (serve via the FastAPI app to watch the agent)"); running = false; startGravity(); };
       ws.onerror = () => setConn("off", "harness offline");
       ws.onmessage = (e) => handle(JSON.parse(e.data));
@@ -148,17 +158,21 @@
         running = false; $("startBtn").classList.remove("active"); $("startBtn").textContent = "▶ Start agent";
         startGravity();
       } else if (msg.type === "worker_set") {
-        $("wScripted").classList.toggle("active", msg.worker === "scripted");
-        $("wHeuristic").classList.toggle("active", msg.worker === "heuristic");
-        $("wClaude").classList.toggle("active", msg.worker === "claude");
+        document.querySelectorAll(".wbtn").forEach((b) =>
+          b.classList.toggle("active",
+            b.dataset.worker === msg.worker && (b.dataset.model || null) === (msg.model || null)));
+        $("worker").textContent = workerLabel(msg.worker, msg.model);
       } else if (msg.type === "reset_ok") {
         game.reset(); draw();
       }
     }
 
+    function workerLabel(worker, model) {
+      return worker === "claude" && model ? "claude · " + model.replace("claude-", "") : worker;
+    }
     function renderEvents(msg) {
       if (msg.run_id) lastRunId = msg.run_id;
-      if (msg.worker) $("worker").textContent = msg.worker;
+      if (msg.worker) $("worker").textContent = workerLabel(msg.worker, msg.model);
       if (msg.action) $("intent").textContent = msg.action.buttons.join(" + ") + "  (" + msg.action.hold_frames + "f)";
       if (msg.checkpoints) {
         $("checkpoints").innerHTML = msg.checkpoints.length
@@ -209,9 +223,12 @@
         $("checkpoints").innerHTML = s.results.map((c) => `<div class="row ${c.passed ? "pass" : "fail"}">${c.passed ? "✓" : "✗"} ${c.name}</div>`).join("");
       }, 200);
     };
-    $("wScripted").onclick = () => ws && ws.send(JSON.stringify({ type: "set_worker", worker: "scripted" }));
-    $("wHeuristic").onclick = () => ws && ws.send(JSON.stringify({ type: "set_worker", worker: "heuristic" }));
-    $("wClaude").onclick = () => ws && ws.send(JSON.stringify({ type: "set_worker", worker: "claude" }));
+    document.querySelectorAll(".wbtn").forEach((b) => {
+      b.onclick = () => {
+        if (!ws || ws.readyState !== 1) return;
+        ws.send(JSON.stringify({ type: "set_worker", worker: b.dataset.worker, model: b.dataset.model || null }));
+      };
+    });
 
     draw(); startGravity(); connect();
   </script>

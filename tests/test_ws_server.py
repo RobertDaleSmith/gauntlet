@@ -31,7 +31,16 @@ def test_ws_worker_swap():
     client = TestClient(create_app())
     with client.websocket_connect("/ws") as ws:
         ws.send_json({"type": "set_worker", "worker": "scripted"})
-        assert ws.receive_json() == {"type": "worker_set", "worker": "scripted"}
+        assert ws.receive_json() == {"type": "worker_set", "worker": "scripted", "model": None}
+
+
+def test_ws_set_claude_model():
+    client = TestClient(create_app())
+    with client.websocket_connect("/ws") as ws:
+        ws.send_json({"type": "set_worker", "worker": "claude", "model": "claude-opus-4-8"})
+        assert ws.receive_json() == {
+            "type": "worker_set", "worker": "claude", "model": "claude-opus-4-8"
+        }
 
 
 def test_replay_endpoint_returns_persisted_steps(tmp_path):

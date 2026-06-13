@@ -86,6 +86,7 @@ class HarnessSession:
             "type": "act",
             "run_id": self.loop.run_id,
             "worker": self.loop.worker.name,
+            "model": getattr(self.loop.worker, "model", None),
             "action": {"buttons": list(action.buttons), "hold_frames": action.hold_frames},
             "checkpoints": checkpoints,
             "alarms": self._drain(),
