@@ -1,26 +1,30 @@
 # Gauntlet — Joypad Harness Planning Document
 
-**A runtime safety harness that governs any AI game-playing agent.** The worker plays a game through a controller interface; the harness decides what inputs are legal, measures real progress, carries game state in and out, and raises structured alarms. When the agent gets stuck, the harness feeds corrective feedback back in and the agent changes course. The harness, not the agent, is what's evaluated.
+**A runtime safety harness governing an AI agent that plays a game like a human** — it sees the rendered screen and presses controller buttons. The harness decides which inputs are legal, measures progress, carries state in and out, and raises structured alarms; on failure it feeds feedback back, on repeated failure it stops and asks a human. The harness, not the agent, is evaluated.
 
 ## The four pillars (each separate from the worker)
 
 | Pillar | Responsibility |
 |---|---|
-| 🛡️ Guardrails | Declared input rules — allowed buttons, max hold, rate limits. Checked *before* execution. |
-| ✅ Checkpoints | Pass/fail on progress from game state (position, score, lives). Persisted to SQLite. |
-| 📦 Material handling | Capture/normalize game state; persist checkpoints; replay from any point. |
+| 🛡️ Guardrails | Declared rules on controller input — allowed buttons, max/min hold, no impossible combos. Checked *before* execution. |
+| ✅ Checkpoints | Pass/fail from ground-truth state — stack-height-safe, not-game-over, no-new-holes. Persisted to SQLite. |
+| 📦 Material handling | Capture/normalize state, persist every step, replay a run from any frame. |
 | 🚨 Alarms | `{type, severity, context, recommended_action}` — drive escalation and recovery. |
 
 ## The core: behavior changes from feedback
 
-The graded "must." Loop: `read state → agent.decide(state) → guardrails validate → execute window → checkpoint pass/fail → on FAIL: feedback hint + alarm → loop`. When `FORWARD_PROGRESS` fails, the harness doesn't silently retry — it injects a hint ("stuck 120 frames, try JUMP") into the agent's next decision and the same agent clears the obstacle. Stuck → told why → adapts → succeeds: the demo's hero beat. (The agent decides an *intent* over a ~60-frame window, not per frame — that's what makes an LLM-in-the-loop real-time feasible.)
+The graded "must." Loop: `observe → grade checkpoints → on FAIL: feedback hint + alarm → agent adapts → repeat`. A reckless agent stacks up, trips `STACK_HEIGHT_SAFE`, fires `CHECKPOINT_FAILED`; the feedback drives a better placement and it recovers. Three consecutive primary failures escalate to a human `STOP`. The agent decides one action per beat (not per frame), which makes an LLM-in-the-loop real-time feasible. The agent (Claude Haiku 4.5) sees **only the rendered frame** as an image and returns a controller action via structured output — it plays like a human; the referee reads ground-truth state to grade.
 
 ## Tech stack
 
-**Python + FastAPI** harness service and control loop. **jsnes** (browser NES emulator) gives RAM access for exact game state, so checkpoints are objective and the agent reads structured state, not pixels. A **WebSocket bridge** renders the game live in the browser while the harness streams events. The **worker** uses the Anthropic SDK with Claude Haiku 4.5 (fast/cheap reflex) and structured-output actions, plus a scripted bot. **SQLite** holds checkpoint and state persistence for replay.
+**Python + FastAPI** harness; the browser runs a custom **Tetris** game on a canvas (the video the agent sees) and applies controller inputs. A **WebSocket bridge** carries frame + state in and actions + events out. **SQLite** persists checkpoints for replay. Workers: **scripted** (reckless), **heuristic** (real Tetris AI), **claude** (vision) — swappable with no harness changes.
 
-## Dashboard, worker independence & escalation
+## Live dashboard (also the deployed URL)
 
-The dashboard *is* the deployed URL: game on the left, the four pillars firing on the right. Any worker (`decide(state) -> action`) drops in unchanged — Claude, GPT, or scripted bot; repeated failures trip a `STOP` that escalates to a human. **Bonus:** live worker swap.
+Split screen — game on the left, the four pillars firing on the right (agent intent, checkpoint pass/fail, alarms, guardrail blocks, current worker). Start/Pause, Reset, live worker-swap, and run replay.
 
-**Demo:** Mario hits a pipe → `FORWARD_PROGRESS` fails → `AGENT_STUCK (HIGH)` → jump hint fed back → same agent clears it → live guardrail block → human escalation → worker swap → checkpoint replay.
+## Worker independence & escalation
+
+Any worker implementing `decide(state, feedback) -> action` drops in unchanged. Repeated failure trips a `STOP` that asks a human. **Bonus:** swap a recovery worker in live (scripted → heuristic → claude).
+
+**Demo:** reckless agent stacks → `STACK_HEIGHT_SAFE` fails → `ESCALATE` alarm → human `STOP` → swap to the heuristic agent (plays low/flat, all green) → swap to Claude (vision) → replay from a checkpoint.
