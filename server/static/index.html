@@ -28,6 +28,7 @@
     .muted { color:#666; }
     .status-dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:middle; }
     .live { background:var(--green); } .off { background:#555; } .stop { background:var(--red); }
+    .version { position:fixed; bottom:8px; right:10px; color:#555; font-size:10px; letter-spacing:.08em; font-variant-numeric:tabular-nums; pointer-events:none; }
   </style>
 </head>
 <body>
@@ -230,7 +231,16 @@
       $("startBtn").textContent = running ? "⏸ Pause agent" : "▶ Start agent";
       if (running) { stopGravity(); observe(); } else { startGravity(); }
     };
-    $("resetBtn").onclick = () => { game.reset(); draw(); if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "reset" })); };
+    $("resetBtn").onclick = () => {
+      // Reset pauses the agent and clears the board, so the next Start reliably
+      // *starts* (Start is a toggle — without this, resetting mid-run leaves it
+      // "running" and the next click pauses instead of starting).
+      running = false;
+      $("startBtn").classList.remove("active");
+      $("startBtn").textContent = "▶ Start agent";
+      game.reset(); draw(); startGravity();
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "reset" }));
+    };
     let recoveryOn = true;
     $("recoveryBtn").onclick = () => {
       recoveryOn = !recoveryOn;
@@ -272,5 +282,6 @@
 
     draw(); startGravity(); connect();
   </script>
+  <div class="version">Joypad Harness v0.1.0</div>
 </body>
 </html>
