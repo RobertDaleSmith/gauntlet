@@ -11,7 +11,7 @@ import json
 
 from harness.types import Action, GameState
 
-MODEL = "claude-opus-4-8"
+MODEL = "claude-haiku-4-5"  # fast (~1-2s/piece) so the agent is watchable
 
 SYSTEM = (
     "You are playing Tetris. You SEE the current board as an image: a 10-wide, "
@@ -76,16 +76,14 @@ class ClaudeWorker:
         return [image, text]
 
     def decide(self, state: GameState, feedback: str | None) -> Action:
+        # Thinking off + Haiku = fast moves. Quality comes from per-piece
+        # planning + the image, not deep deliberation (which made it too slow).
         resp = self._ensure_client().messages.create(
             model=self.model,
-            max_tokens=2048,
+            max_tokens=256,
             system=SYSTEM,
             messages=[{"role": "user", "content": self._content(feedback)}],
-            thinking={"type": "adaptive"},  # let it plan the placement
-            output_config={
-                "format": {"type": "json_schema", "schema": ACTION_SCHEMA},
-                "effort": "low",  # quick planning; the game waits, so no drift
-            },
+            output_config={"format": {"type": "json_schema", "schema": ACTION_SCHEMA}},
         )
         text = next(b.text for b in resp.content if getattr(b, "type", None) == "text")
         data = json.loads(text)

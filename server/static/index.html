@@ -114,18 +114,34 @@
 
     function observe() {
       if (!running || !ws || ws.readyState !== 1) return;
+      setConn("live", "🤔 agent is thinking…");
       const frame = document.getElementById("screen").toDataURL("image/png");
       ws.send(JSON.stringify({ type: "observe", state: game.state(), frame }));
+    }
+
+    // Apply the action's buttons one at a time so the piece visibly slides into
+    // place (instead of teleporting after the think), then grab the next frame.
+    function animateAction(buttons) {
+      let i = 0;
+      (function next() {
+        if (!running) return;
+        if (i < buttons.length) {
+          game.input(buttons[i++]);
+          draw();
+          setTimeout(next, 90);
+        } else {
+          game.tick();
+          draw();
+          setTimeout(observe, 120);
+        }
+      })();
     }
 
     function handle(msg) {
       if (msg.type === "act") {
         renderEvents(msg);
         setConn("live", "running · run " + (lastRunId || "").slice(0, 8));
-        for (const b of msg.action.buttons) game.input(b);
-        game.tick();
-        draw();
-        setTimeout(observe, STEP_MS);
+        animateAction(msg.action.buttons);
       } else if (msg.type === "stopped") {
         renderEvents(msg);
         setConn("stop", "STOPPED — " + (msg.error || msg.status) + " · Reset to retry");
