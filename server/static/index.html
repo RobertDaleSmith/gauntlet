@@ -53,6 +53,7 @@
           <button class="wbtn" data-worker="claude" data-model="claude-haiku-4-5" data-perception="text">State · Haiku (fast)</button>
           <button class="wbtn" data-worker="claude" data-model="claude-opus-4-8" data-perception="text">State · Opus (smart)</button>
           <button class="wbtn" data-worker="claude" data-model="claude-haiku-4-5" data-perception="vision">Vision · Haiku (sees screen)</button>
+          <button class="wbtn" data-worker="claude" data-model="claude-haiku-4-5" data-perception="json">Plan · Haiku (JSON board)</button>
           <div class="seclabel">Baseline</div>
           <button class="wbtn" data-worker="sloppy">Sloppy (ignores right side)</button>
           <button class="wbtn" data-worker="scripted">Reckless</button>
@@ -199,7 +200,7 @@
 
     function workerLabel(worker, model, perception) {
       if (worker !== "claude") return worker;
-      const mode = perception === "vision" ? " (vision)" : " (state)";
+      const mode = perception === "vision" ? " (vision)" : (perception === "json" ? " (plan)" : " (state)");
       return "claude · " + (model || "").replace("claude-", "") + mode;
     }
     function renderEvents(msg) {
@@ -247,7 +248,13 @@
       $("alarms").innerHTML = '<span class="muted">—</span>';
       $("guardrails").innerHTML = '<span class="muted">—</span>';
       setConn("off", "reset — press Start");
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "reset" }));
+      if (ws && ws.readyState === 1) {
+        ws.send(JSON.stringify({ type: "reset" }));
+        // A fresh session defaults recovery ON and to the heuristic; re-apply the
+        // current UI selection so reset doesn't silently change worker/recovery.
+        ws.send(JSON.stringify({ type: "set_recovery", on: recoveryOn }));
+        ws.send(JSON.stringify({ type: "set_worker", ...currentWorker }));
+      }
     };
     let recoveryOn = true;
     $("recoveryBtn").onclick = () => {
