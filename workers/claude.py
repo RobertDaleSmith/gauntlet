@@ -39,34 +39,37 @@ ACTION_SCHEMA = {
 }
 
 # --- "json" perception: structured board in, full plan out, one step ahead ---
-# Pure-planner experiment: no local candidate enumeration or move scoring. The
-# model gets a JSON board (occupancy grid + current/next pieces) and must plan
-# the placement itself, then state its intended plan for the NEXT piece. We feed
-# that intent back the following turn so it can keep or revise — receding-horizon
-# planning driven entirely by the model.
+# Pure-planner experiment: no local candidate enumeration or move scoring. From a
+# SINGLE snapshot the model plans BOTH the current and next piece — the way a human
+# reads the board once and knows the buttons for both. It gets a `plan` field to
+# reason in (simulate gravity/rotations, find completing rows) before committing,
+# with a generous token budget so the JSON never truncates. We execute the current
+# piece, cache the next-piece moves (the game is deterministic, so a self-consistent
+# 2-piece plan stays valid), then re-snapshot for the third piece.
 PLAN_SYSTEM = (
     "You are playing Tetris by driving a controller. The board is a JSON grid, "
     "10 columns wide and 20 rows tall; row 0 is the TOP, row 19 the BOTTOM. A cell "
     "is 1 if filled, 0 if empty. `current` is the falling piece (its absolute "
     "[row,col] cells); `next` is the piece after it.\n\n"
-    "Goal: clear full rows. Keep the stack LOW and FLAT and never trap an empty "
-    "cell under a filled one (a hole) — holes are permanent and lose the game.\n\n"
-    "Plan where the CURRENT piece should land, then output the exact controller "
-    "sequence to get it there: zero or more ROTATE, then move horizontally with "
-    "LEFT *or* RIGHT (never both), then a single final DROP. Think one piece ahead: "
-    "also give your intended plan for the `next` piece. You only commit the current "
-    "piece now; you'll re-plan once it locks.\n\n"
-    "Be terse: output ONLY the `moves` array and a short `next_intent` (a few words). "
-    "No explanations."
+    "You get ONE snapshot and must plan BOTH pieces — a skilled human reads the "
+    "board once and immediately knows the buttons for both. Do the same.\n\n"
+    "Think it through in `plan`: for the CURRENT piece pick a target column and "
+    "rotation, mentally drop it (it falls until it hits something) and check it "
+    "creates no hole and ideally completes a row; then, assuming it landed there, "
+    "plan the NEXT piece the same way. Keep the stack LOW and FLAT, complete full "
+    "rows whenever possible, and NEVER trap an empty cell under a filled one.\n\n"
+    "Then output `current_moves` and `next_moves`. Each list: zero or more ROTATE, "
+    "then move with LEFT or RIGHT (never both in one list), then a single final DROP."
 )
 
 PLAN_SCHEMA = {
     "type": "object",
     "properties": {
-        "moves": {"type": "array", "items": {"type": "string"}},
-        "next_intent": {"type": "string"},
+        "plan": {"type": "string"},
+        "current_moves": {"type": "array", "items": {"type": "string"}},
+        "next_moves": {"type": "array", "items": {"type": "string"}},
     },
-    "required": ["moves"],
+    "required": ["current_moves"],
     "additionalProperties": False,
 }
 
@@ -95,7 +98,7 @@ class ClaudeWorker:
         self.model = model
         self.perception = perception
         self._frame: str | None = None
-        self._intent: list[str] | None = None  # "json" mode: last turn's plan for this piece
+        self._pending: list[str] | None = None  # "json" mode: cached next-piece moves
 
     def set_frame(self, frame: str | None) -> None:
         """Latest rendered frame (data URL) — used only in vision perception mode."""
@@ -127,11 +130,11 @@ class ClaudeWorker:
             f"Board (next piece: {next_piece}):\n{_render_board(state)}\n\n{instr}"
         )
 
+    _VALID = ("LEFT", "RIGHT", "ROTATE", "DOWN", "DROP")
+
     def _json_user(self, state: GameState, feedback: str | None) -> str:
         board = state.raw.get("board") or []
         grid = [[1 if cell else 0 for cell in row] for row in board]
-        if not any(any(row) for row in grid):
-            self._intent = None  # fresh board — drop stale one-step-ahead memory
         current = state.raw.get("current", {})
         payload = {
             "cols": len(grid[0]) if grid else 10,
@@ -144,19 +147,24 @@ class ClaudeWorker:
             f"stats: height={state.raw.get('stack_height')} "
             f"holes={state.raw.get('holes')} lines={state.raw.get('lines')}"
         )
-        memory = (
-            f"\nLast turn you intended this plan for the now-current piece: "
-            f"{self._intent}. Keep it if still good, or revise."
-            if self._intent else ""
-        )
         return (
             f"{json.dumps(payload)}\n\n{stats}\n"
-            f"feedback: {feedback or 'none'}{memory}\n"
-            "Output `moves` for the current piece (ROTATEs, then LEFT or RIGHT, then "
-            "DROP) and `next_intent` (your plan for the next piece)."
+            f"feedback: {feedback or 'none'}\n"
+            "Reason in `plan`, then output `current_moves` and `next_moves` "
+            "(each: ROTATEs, then LEFT or RIGHT, then DROP)."
         )
 
     def _decide_plan(self, state: GameState, feedback: str | None) -> Action:
+        board = state.raw.get("board") or []
+        if not any(any(cell for cell in row) for row in board):
+            self._pending = None  # fresh board — drop a stale cached plan
+
+        # Second piece of a 2-piece plan: execute the cached moves, no API call.
+        if self._pending is not None:
+            moves = [b for b in self._pending if b in self._VALID]
+            self._pending = None
+            return Action(tuple(moves) or ("DROP",), 6)
+
         client = self._ensure_client()
         content = self._json_user(state, feedback)
         # Pure-LLM run with no recovery worker — a single transient API blip would
@@ -166,7 +174,7 @@ class ClaudeWorker:
             try:
                 resp = client.messages.create(
                     model=self.model,
-                    max_tokens=512,
+                    max_tokens=1500,  # room to reason in `plan` without truncating JSON
                     system=PLAN_SYSTEM,
                     messages=[{"role": "user", "content": content}],
                     output_config={"format": {"type": "json_schema", "schema": PLAN_SCHEMA}},
@@ -177,10 +185,10 @@ class ClaudeWorker:
                 if not text:
                     raise ValueError("no text block in response")
                 data = json.loads(text)
-                self._intent = (data.get("next_intent") or "").strip() or None
-                valid = ("LEFT", "RIGHT", "ROTATE", "DOWN", "DROP")
-                moves = [b for b in data.get("moves", []) if b in valid]
-                return Action(tuple(moves) or ("DROP",), 6)
+                cur = [b for b in data.get("current_moves", []) if b in self._VALID]
+                nxt = [b for b in data.get("next_moves", []) if b in self._VALID]
+                self._pending = nxt or None  # cache the next piece's moves
+                return Action(tuple(cur) or ("DROP",), 6)
             except Exception as e:  # transient API/parse error — retry
                 last_exc = e
                 import time
