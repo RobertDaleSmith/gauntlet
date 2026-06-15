@@ -122,7 +122,7 @@
       nes.frame();
       ctx.putImageData(image, 0, 0);
       frames++;
-      if ((frames & 3) === 0) renderOverlay();  // live "what the agent sees"
+      if ((frames & 3) === 0) { try { renderOverlay(); } catch (e) { /* never let perception break the emulator */ } }
       if ((frames & 31) === 0) $("status").textContent = "running · frame " + frames;
       raf = requestAnimationFrame(loop);
     }
