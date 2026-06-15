@@ -83,6 +83,12 @@ exactly this: **governing a real, fallible AI** — grading it, nudging it, hand
 off to a reliable fallback, and escalating to a human. The heuristic shows the
 harness governing a *competent* agent; the LLM shows it governing a *real* one.
 
+**Update:** an LLM *can* play well once the harness does the geometry for it — see
+[docs/LLM_GAMEPLAY.md](docs/LLM_GAMEPLAY.md). Pure LLM planning clears ~0 lines
+(even Opus); when the harness enumerates legal placements and the model just
+*judges* them (the **Pick · Haiku** agent), it clears lines steadily. Perception
+and strategy were never the wall — execution was, and that's the harness's job.
+
 ## Deliverables
 
 - [x] 1-page Harness Planning Document
