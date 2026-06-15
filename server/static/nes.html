@@ -118,12 +118,21 @@
       });
     }
 
-    function loop() {
-      nes.frame();
-      ctx.putImageData(image, 0, 0);
-      frames++;
-      if ((frames & 3) === 0) { try { renderOverlay(); } catch (e) { /* never let perception break the emulator */ } }
-      if ((frames & 31) === 0) $("status").textContent = "running · frame " + frames;
+    // Run the emulator at a fixed 60 Hz regardless of the display's refresh rate
+    // (a 120 Hz / ProMotion screen would otherwise run the game at 2x).
+    let acc = 0, lastT = 0;
+    const STEP = 1000 / 60;
+    function loop(t) {
+      const now = t || lastT;
+      if (!lastT) lastT = now;
+      acc += now - lastT; lastT = now;
+      let ran = 0;
+      while (acc >= STEP && ran < 4) { nes.frame(); acc -= STEP; ran++; frames++; }
+      if (ran) {
+        ctx.putImageData(image, 0, 0);
+        if ((frames & 3) === 0) { try { renderOverlay(); } catch (e) { /* never let perception break the emulator */ } }
+        if ((frames & 31) === 0) $("status").textContent = "running · frame " + frames;
+      }
       raf = requestAnimationFrame(loop);
     }
 
@@ -132,9 +141,9 @@
       romBinary = binary;
       nes = makeNes();
       nes.loadROM(binary);
-      frames = 0;
+      frames = 0; acc = 0; lastT = 0;
       $("status").textContent = "running…";
-      loop();
+      raf = requestAnimationFrame(loop);
     }
 
     $("rom").addEventListener("change", (e) => {
