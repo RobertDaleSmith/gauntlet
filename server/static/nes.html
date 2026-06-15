@@ -2,14 +2,14 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>Joypad Harness — NES Tetris (M1)</title>
+  <title>Joypad Harness — NES Tetris (nes-rust)</title>
   <style>
     :root { --border:#2a2a2a; --amber:#FFB020; }
     body { margin:0; font-family:-apple-system, system-ui, sans-serif; background:#0a0a0a; color:#eee;
            min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:16px; padding:24px 0; box-sizing:border-box; }
     h1 { font-size:15px; font-weight:600; letter-spacing:.02em; margin:0; }
-    .sub { color:#888; font-size:12px; max-width:540px; text-align:center; line-height:1.5; }
-    canvas { background:#000; border:1px solid var(--border); border-radius:6px;
+    .sub { color:#888; font-size:12px; max-width:560px; text-align:center; line-height:1.5; }
+    canvas#screen { background:#000; border:1px solid var(--border); border-radius:6px;
              image-rendering:pixelated; width:512px; height:480px; }
     .bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center; }
     button, label.file { background:#161616; color:#eee; border:1px solid var(--border); border-radius:6px;
@@ -22,9 +22,9 @@
   </style>
 </head>
 <body>
-  <h1>NES Tetris in the harness — Milestone 1</h1>
-  <div class="sub">Emulator integration: load your own ROM, render the framebuffer, drive the
-    controller by keyboard. No ROM is bundled or uploaded — it stays in your browser.</div>
+  <h1>NES Tetris in the harness — nes-rust (accurate)</h1>
+  <div class="sub">Accurate Rust→WASM emulator with frame-stepping, framebuffer, and controller input —
+    the foundation for governing a vision-only agent. Load your own ROM; nothing is bundled or uploaded.</div>
   <div style="display:flex; gap:22px; align-items:flex-start;">
     <canvas id="screen" width="256" height="240"></canvas>
     <div style="display:flex; flex-direction:column; gap:6px; align-items:center;">
@@ -38,24 +38,25 @@
   <div class="bar">
     <label class="file">Load ROM (.nes)<input id="rom" type="file" accept=".nes" /></label>
     <button id="reset">Reset</button>
-    <span class="status" id="status">no ROM loaded</span>
+    <span class="status" id="status">loading emulator…</span>
   </div>
   <div class="hint">Controls: ← → ↓ move · ↑ up · <code>Z</code> rotate&nbsp;A · <code>X</code> rotate&nbsp;B ·
     <code>Enter</code> Start · <code>Shift</code> Select</div>
 
-  <script src="vendor/jsnes.min.js"></script>
-  <script>
+  <script type="module">
+    import init, { WasmNes, Button } from "./vendor/nes_rust_wasm.js";
+
     const $ = (id) => document.getElementById(id);
     const W = 256, H = 240;
     const ctx = $("screen").getContext("2d");
-    const image = ctx.getImageData(0, 0, W, H);
-    const buf32 = new Uint32Array(image.data.buffer);
+    const image = ctx.createImageData(W, H);
+    const pixels = new Uint8Array(image.data.buffer);  // RGBA, written by update_pixels
 
-    let nes = null, raf = null, romBinary = null, frames = 0;
+    let nes = null, raf = null, romBytes = null, frames = 0, ready = false;
 
     // --- vision: reconstruct the 10x20 well from pixels only (no RAM) ---
-    // Calibrated for Tengen Tetris 1-player: the well is the left region.
-    const WELL = { x0: 16, y0: 64, cell: 8, cols: 10, rows: 20 };
+    // Calibrated for Nintendo Tetris (USA): centered playfield.
+    const WELL = { x0: 96, y0: 48, cell: 8, cols: 10, rows: 20 };
     const vctx = $("vision").getContext("2d");
 
     function vision() {
@@ -67,7 +68,6 @@
         for (let c = 0; c < WELL.cols; c++)
           filled[r][c] = lit(WELL.x0 + c * WELL.cell + 4, WELL.y0 + r * WELL.cell + 4) ? 1 : 0;
       }
-      // falling piece = floating connected component (<=4 cells, air beneath it)
       const seen = filled.map((row) => row.map(() => false));
       let piece = null;
       for (let r = 0; r < WELL.rows; r++) for (let c = 0; c < WELL.cols; c++) {
@@ -108,18 +108,9 @@
         if (board[r][c]) { vctx.fillStyle = "#7f8c9b"; vctx.fillRect(c * cs + 1, r * cs + 1, cs - 2, cs - 2); }
       if (current) for (const [r, c] of current) { vctx.fillStyle = "#FFB020"; vctx.fillRect(c * cs + 1, r * cs + 1, cs - 2, cs - 2); }
     }
-
     window.nesVision = vision;  // exposed for the harness loop (M3)
 
-    function makeNes() {
-      return new jsnes.NES({
-        onFrame: (fb) => { for (let i = 0; i < W * H; i++) buf32[i] = 0xff000000 | fb[i]; },
-        onAudioSample: () => {},  // audio ignored for now
-      });
-    }
-
-    // Run the emulator at a fixed 60 Hz regardless of the display's refresh rate
-    // (a 120 Hz / ProMotion screen would otherwise run the game at 2x).
+    // Fixed 60 Hz regardless of display refresh (also required for M3 frame-stepping).
     let acc = 0, lastT = 0;
     const STEP = 1000 / 60;
     function loop(t) {
@@ -127,20 +118,22 @@
       if (!lastT) lastT = now;
       acc += now - lastT; lastT = now;
       let ran = 0;
-      while (acc >= STEP && ran < 4) { nes.frame(); acc -= STEP; ran++; frames++; }
+      while (acc >= STEP && ran < 4) { nes.step_frame(); acc -= STEP; ran++; frames++; }
       if (ran) {
+        nes.update_pixels(pixels);
         ctx.putImageData(image, 0, 0);
-        if ((frames & 3) === 0) { try { renderOverlay(); } catch (e) { /* never let perception break the emulator */ } }
+        if ((frames & 3) === 0) { try { renderOverlay(); } catch (e) { /* never break the emulator */ } }
         if ((frames & 31) === 0) $("status").textContent = "running · frame " + frames;
       }
       raf = requestAnimationFrame(loop);
     }
 
-    function boot(binary) {
+    function boot(bytes) {
       if (raf) cancelAnimationFrame(raf);
-      romBinary = binary;
-      nes = makeNes();
-      nes.loadROM(binary);
+      romBytes = bytes;
+      nes = WasmNes.new();
+      nes.set_rom(bytes);
+      nes.bootup();
       frames = 0; acc = 0; lastT = 0;
       $("status").textContent = "running…";
       raf = requestAnimationFrame(loop);
@@ -148,48 +141,31 @@
 
     $("rom").addEventListener("change", (e) => {
       const file = e.target.files[0];
-      if (!file) return;
+      if (!file || !ready) return;
       $("status").textContent = "loading " + file.name + "…";
       const r = new FileReader();
-      r.onload = () => {
-        const bytes = new Uint8Array(r.result);
-        let mapper = (bytes[6] >> 4) | (bytes[7] & 0xf0);
-        // This Tengen Tetris dump declares mapper 148, which jsnes can't run, but
-        // it's functionally CNROM (mapper 3: fixed 32KB PRG + switchable CHR).
-        // Rewrite the iNES header to mapper 3 so it boots.
-        if (mapper === 148) {
-          bytes[6] = (bytes[6] & 0x0f) | 0x30;  // mapper low nibble = 3
-          bytes[7] = bytes[7] & 0x03;           // clear mapper-high + NES2.0 bits
-          mapper = 3;
-        }
-        $("status").textContent = "ROM loaded · mapper " + mapper;
-        let s = "";
-        for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
-        boot(s);
-      };
+      r.onload = () => boot(new Uint8Array(r.result));
       r.readAsArrayBuffer(file);
     });
-
-    $("reset").addEventListener("click", () => { if (romBinary) boot(romBinary); });
+    $("reset").addEventListener("click", () => { if (romBytes) boot(romBytes); });
 
     const KEYS = {
-      ArrowUp: jsnes.Controller.BUTTON_UP,
-      ArrowDown: jsnes.Controller.BUTTON_DOWN,
-      ArrowLeft: jsnes.Controller.BUTTON_LEFT,
-      ArrowRight: jsnes.Controller.BUTTON_RIGHT,
-      z: jsnes.Controller.BUTTON_A, Z: jsnes.Controller.BUTTON_A,
-      x: jsnes.Controller.BUTTON_B, X: jsnes.Controller.BUTTON_B,
-      Enter: jsnes.Controller.BUTTON_START,
-      Shift: jsnes.Controller.BUTTON_SELECT,
+      ArrowUp: () => Button.Joypad1Up, ArrowDown: () => Button.Joypad1Down,
+      ArrowLeft: () => Button.Joypad1Left, ArrowRight: () => Button.Joypad1Right,
+      z: () => Button.Joypad1A, Z: () => Button.Joypad1A,
+      x: () => Button.Joypad1B, X: () => Button.Joypad1B,
+      Enter: () => Button.Start, Shift: () => Button.Select,
     };
     document.addEventListener("keydown", (e) => {
-      const b = KEYS[e.key];
-      if (b !== undefined && nes) { e.preventDefault(); nes.buttonDown(1, b); }
+      const k = KEYS[e.key]; if (k && nes) { e.preventDefault(); nes.press_button(k()); }
     });
     document.addEventListener("keyup", (e) => {
-      const b = KEYS[e.key];
-      if (b !== undefined && nes) { e.preventDefault(); nes.buttonUp(1, b); }
+      const k = KEYS[e.key]; if (k && nes) { e.preventDefault(); nes.release_button(k()); }
     });
+
+    await init();
+    ready = true;
+    $("status").textContent = "emulator ready — load a ROM";
   </script>
 </body>
 </html>

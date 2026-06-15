@@ -6,6 +6,20 @@ take everything we proved on the toy game and point the harness at the **real
 and driving a **controller** like a human. This is the architecture, the genuinely
 hard parts, and a staged plan. No code yet — alignment first.
 
+## Status / decisions
+
+- **Emulator: nes-rust (not jsnes).** jsnes renders NES Tetris *menus* but not
+  *gameplay* — the playfield background goes black, leaving only the sprite
+  pieces (reproduced in headless with both a Tengen and a Nintendo dump, and
+  confirmed by the user on raw jsnes.org). jsnes is too inaccurate for this
+  timing-sensitive game. Swapped to **`nes-rust`** (accurate Rust→WASM, MIT) which
+  renders gameplay correctly and has the exact API we need: `step_frame()`,
+  `update_pixels()` (RGBA framebuffer), `press_button()/release_button()`.
+- **ROM: Nintendo *Tetris (USA)*** (mapper 1, loads natively — no header hacks).
+- **M1 done** (emulator in the harness, ROM boots, controllable) and **M2 done**
+  (vision-only board reconstruction; Nintendo well calibrated to x0=96, y0=48,
+  8px cells, 10×20). Both on nes-rust. Next: **M3**.
+
 ## Goal & constraints
 
 - **World:** real NES Tetris running in `jsnes` (MIT, pure-JS NES emulator) in the
