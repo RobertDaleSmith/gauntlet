@@ -287,7 +287,7 @@ class ClaudeWorker:
         raise last_exc  # type: ignore[misc]
 
     def decide(self, state: GameState, feedback: str | None) -> Action:
-        if self.perception == "select":
+        if self.perception in ("select", "select-vision"):
             return self._decide_select(state, feedback)
         if self.perception == "json":
             return self._decide_plan(state, feedback)

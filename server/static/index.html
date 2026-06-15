@@ -52,6 +52,7 @@
           <button class="wbtn" data-worker="heuristic" data-perception="pixels">Heuristic · Vision (pixels only)</button>
           <div class="seclabel">LLM agent — drives buttons (needs API key)</div>
           <button class="wbtn" data-worker="claude" data-model="claude-haiku-4-5" data-perception="select">Pick · Haiku — harness-scored (plays well)</button>
+          <button class="wbtn" data-worker="claude" data-model="claude-haiku-4-5" data-perception="select-vision">Pick · Haiku · Vision — scored + sees screen</button>
           <div class="seclabel">Pure-LLM experiments — no scaffolding (see docs/LLM_GAMEPLAY.md)</div>
           <button class="wbtn" data-worker="claude" data-model="claude-haiku-4-5" data-perception="text">State · Haiku</button>
           <button class="wbtn" data-worker="claude" data-model="claude-haiku-4-5" data-perception="json">Plan · Haiku</button>
@@ -207,7 +208,8 @@
       setConn("live", "🤔 agent is thinking…");
       const frame = document.getElementById("screen").toDataURL("image/png");
       const msg = { type: "observe", state: game.state(), frame };
-      if (currentWorker.perception === "pixels") msg.vision = visionState();
+      if (currentWorker.perception === "pixels" || currentWorker.perception === "select-vision")
+        msg.vision = visionState();
       ws.send(JSON.stringify(msg));
     }
 
@@ -259,7 +261,8 @@
         return worker === "heuristic" && perception === "pixels" ? "heuristic (vision)" : worker;
       const mode = perception === "vision" ? " (vision)"
         : perception === "json" ? " (plan)"
-        : perception === "select" ? " (pick)" : " (state)";
+        : perception === "select" ? " (pick)"
+        : perception === "select-vision" ? " (pick · vision)" : " (state)";
       return "claude · " + (model || "").replace("claude-", "") + mode;
     }
     function renderEvents(msg) {

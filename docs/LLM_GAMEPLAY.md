@@ -84,3 +84,15 @@ never topping out** — essentially as strong as it plays on ground truth. So a
 clean grid render is trivially recoverable by CV, and "see the screen, drive the
 controller" works end to end. The perception layer is shared, so the LLM agents
 can run vision-only on the same reconstructed board.
+
+### Capstone: the whole thesis in one agent
+
+**Pick · Haiku · Vision** combines everything: it perceives the **pixel-
+reconstructed board** (no game state), the harness enumerates the legal
+placements, the **LLM judges** which is best, and we **drive the chosen
+placement's buttons** one press at a time. Vision-only, recovery off, it cleared
+**16 lines in 100s and held height 2–9, never topping out** — on par with the
+ground-truth candidate-select. An LLM that sees the screen, reasons about scored
+options, and drives the controller like a human, playing a real game. The harness
+makes that possible by owning exactly the parts the model is bad at (precise
+geometry and move arithmetic) and nothing more.
