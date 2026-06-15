@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Joypad Harness — NES Tetris (M1)</title>
+  <style>
+    :root { --border:#2a2a2a; --amber:#FFB020; }
+    body { margin:0; font-family:-apple-system, system-ui, sans-serif; background:#0a0a0a; color:#eee;
+           min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:16px; padding:24px 0; box-sizing:border-box; }
+    h1 { font-size:15px; font-weight:600; letter-spacing:.02em; margin:0; }
+    .sub { color:#888; font-size:12px; max-width:540px; text-align:center; line-height:1.5; }
+    canvas { background:#000; border:1px solid var(--border); border-radius:6px;
+             image-rendering:pixelated; width:512px; height:480px; }
+    .bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center; }
+    button, label.file { background:#161616; color:#eee; border:1px solid var(--border); border-radius:6px;
+             padding:8px 12px; font-size:12px; cursor:pointer; }
+    button:hover, label.file:hover { border-color:#444; }
+    input[type=file] { display:none; }
+    .status { color:var(--amber); font-size:12px; font-variant-numeric:tabular-nums; }
+    .hint { color:#666; font-size:11px; }
+    code { color:#bbb; background:#161616; padding:1px 5px; border-radius:4px; }
+  </style>
+</head>
+<body>
+  <h1>NES Tetris in the harness — Milestone 1</h1>
+  <div class="sub">Emulator integration: load your own ROM, render the framebuffer, drive the
+    controller by keyboard. No ROM is bundled or uploaded — it stays in your browser.</div>
+  <canvas id="screen" width="256" height="240"></canvas>
+  <div class="bar">
+    <label class="file">Load ROM (.nes)<input id="rom" type="file" accept=".nes" /></label>
+    <button id="reset">Reset</button>
+    <span class="status" id="status">no ROM loaded</span>
+  </div>
+  <div class="hint">Controls: ← → ↓ move · ↑ up · <code>Z</code> rotate&nbsp;A · <code>X</code> rotate&nbsp;B ·
+    <code>Enter</code> Start · <code>Shift</code> Select</div>
+
+  <script src="vendor/jsnes.min.js"></script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const W = 256, H = 240;
+    const ctx = $("screen").getContext("2d");
+    const image = ctx.getImageData(0, 0, W, H);
+    const buf32 = new Uint32Array(image.data.buffer);
+
+    let nes = null, raf = null, romBinary = null, frames = 0;
+
+    function makeNes() {
+      return new jsnes.NES({
+        onFrame: (fb) => { for (let i = 0; i < W * H; i++) buf32[i] = 0xff000000 | fb[i]; },
+        onAudioSample: () => {},  // audio ignored for now
+      });
+    }
+
+    function loop() {
+      nes.frame();
+      ctx.putImageData(image, 0, 0);
+      frames++;
+      if ((frames & 31) === 0) $("status").textContent = "running · frame " + frames;
+      raf = requestAnimationFrame(loop);
+    }
+
+    function boot(binary) {
+      if (raf) cancelAnimationFrame(raf);
+      romBinary = binary;
+      nes = makeNes();
+      nes.loadROM(binary);
+      frames = 0;
+      $("status").textContent = "running…";
+      loop();
+    }
+
+    $("rom").addEventListener("change", (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      $("status").textContent = "loading " + file.name + "…";
+      const r = new FileReader();
+      r.onload = () => {
+        const bytes = new Uint8Array(r.result);
+        let mapper = (bytes[6] >> 4) | (bytes[7] & 0xf0);
+        // This Tengen Tetris dump declares mapper 148, which jsnes can't run, but
+        // it's functionally CNROM (mapper 3: fixed 32KB PRG + switchable CHR).
+        // Rewrite the iNES header to mapper 3 so it boots.
+        if (mapper === 148) {
+          bytes[6] = (bytes[6] & 0x0f) | 0x30;  // mapper low nibble = 3
+          bytes[7] = bytes[7] & 0x03;           // clear mapper-high + NES2.0 bits
+          mapper = 3;
+        }
+        $("status").textContent = "ROM loaded · mapper " + mapper;
+        let s = "";
+        for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+        boot(s);
+      };
+      r.readAsArrayBuffer(file);
+    });
+
+    $("reset").addEventListener("click", () => { if (romBinary) boot(romBinary); });
+
+    const KEYS = {
+      ArrowUp: jsnes.Controller.BUTTON_UP,
+      ArrowDown: jsnes.Controller.BUTTON_DOWN,
+      ArrowLeft: jsnes.Controller.BUTTON_LEFT,
+      ArrowRight: jsnes.Controller.BUTTON_RIGHT,
+      z: jsnes.Controller.BUTTON_A, Z: jsnes.Controller.BUTTON_A,
+      x: jsnes.Controller.BUTTON_B, X: jsnes.Controller.BUTTON_B,
+      Enter: jsnes.Controller.BUTTON_START,
+      Shift: jsnes.Controller.BUTTON_SELECT,
+    };
+    document.addEventListener("keydown", (e) => {
+      const b = KEYS[e.key];
+      if (b !== undefined && nes) { e.preventDefault(); nes.buttonDown(1, b); }
+    });
+    document.addEventListener("keyup", (e) => {
+      const b = KEYS[e.key];
+      if (b !== undefined && nes) { e.preventDefault(); nes.buttonUp(1, b); }
+    });
+  </script>
+</body>
+</html>
