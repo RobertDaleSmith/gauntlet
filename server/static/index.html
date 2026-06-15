@@ -29,6 +29,12 @@
     .status-dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; vertical-align:middle; }
     .live { background:var(--green); } .off { background:#555; } .stop { background:var(--red); }
     .version { position:fixed; bottom:8px; right:10px; color:#555; font-size:10px; letter-spacing:.08em; font-variant-numeric:tabular-nums; pointer-events:none; }
+    .coach { width:100%; box-sizing:border-box; background:#161616; color:#eee; border:1px solid var(--border); border-radius:6px; padding:7px 9px; font-size:12px; }
+    .coach:focus { outline:none; border-color:var(--amber); }
+    .log { max-height:170px; overflow:auto; font-size:12px; line-height:1.5; }
+    .log > div { margin:2px 0; color:#aaa; }
+    .log .mv { color:#fff; font-variant-numeric:tabular-nums; }
+    .log .meta { color:#666; }
   </style>
 </head>
 <body>
@@ -61,6 +67,8 @@
           <div class="seclabel">Baseline</div>
           <button class="wbtn" data-worker="sloppy">Sloppy (ignores right side)</button>
           <button class="wbtn" data-worker="scripted">Reckless</button>
+          <div class="seclabel">Coach — tell the LLM how to play</div>
+          <input id="coach" class="coach" placeholder="e.g. set up a tetris before clearing lines" />
           <div class="seclabel">Harness</div>
           <button id="recoveryBtn" class="active">Recovery: ON</button>
         </div>
@@ -82,6 +90,7 @@
       <h2>Checkpoints</h2><div id="checkpoints" class="muted">—</div>
       <h2>Alarms</h2><div id="alarms" class="muted">—</div>
       <h2>Guardrails</h2><div id="guardrails" class="muted">—</div>
+      <h2>Agent log</h2><div id="log" class="log"><span class="muted">—</span></div>
     </div>
   </div>
 
@@ -95,6 +104,7 @@
     // Default to the heuristic: works with no API key, plays cleanly, costs nothing
     // — the right out-of-box experience for the hosted URL. LLM is one click away.
     let currentWorker = { worker: "heuristic", model: null, perception: null };
+    let directive = "";
 
     let flashing = false;
     function draw() {
@@ -136,6 +146,7 @@
         $("startBtn").disabled = false;
         ws.send(JSON.stringify({ type: "set_worker", ...currentWorker }));  // restore selection
         ws.send(JSON.stringify({ type: "set_recovery", on: recoveryOn }));
+        ws.send(JSON.stringify({ type: "set_directive", text: directive }));
         if (wasRunning) {  // resume after a transient drop
           running = true; wasRunning = false;
           $("startBtn").classList.add("active"); $("startBtn").textContent = "⏸ Pause agent";
@@ -234,6 +245,7 @@
     function handle(msg) {
       if (msg.type === "act") {
         renderEvents(msg);
+        if (msg.thought) appendLog(msg.action.buttons, msg.thought);
         setConn("live", "running · run " + (lastRunId || "").slice(0, 8));
         animateAction(msg.action.buttons);
       } else if (msg.type === "stopped") {
@@ -256,6 +268,19 @@
       }
     }
 
+    function escapeHtml(s) {
+      return (s || "").replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+    }
+    function appendLog(buttons, thought) {
+      const log = $("log");
+      if (log.querySelector(".muted")) log.innerHTML = "";
+      const div = document.createElement("div");
+      div.innerHTML = `<span class="mv">${(buttons || []).join(" ") || "—"}</span> ` +
+        `<span class="meta">${escapeHtml(thought)}</span>`;
+      log.appendChild(div);
+      while (log.children.length > 80) log.removeChild(log.firstChild);
+      log.scrollTop = log.scrollHeight;
+    }
     function workerLabel(worker, model, perception) {
       if (worker !== "claude")
         return worker === "heuristic" && perception === "pixels" ? "heuristic (vision)" : worker;
@@ -310,12 +335,14 @@
       $("alarms").innerHTML = '<span class="muted">—</span>';
       $("guardrails").innerHTML = '<span class="muted">—</span>';
       setConn("off", "reset — press Start");
+      $("log").innerHTML = '<span class="muted">—</span>';
       if (ws && ws.readyState === 1) {
         ws.send(JSON.stringify({ type: "reset" }));
         // A fresh session defaults recovery ON and to the heuristic; re-apply the
         // current UI selection so reset doesn't silently change worker/recovery.
         ws.send(JSON.stringify({ type: "set_recovery", on: recoveryOn }));
         ws.send(JSON.stringify({ type: "set_worker", ...currentWorker }));
+        ws.send(JSON.stringify({ type: "set_directive", text: directive }));
       }
     };
     let recoveryOn = true;
@@ -356,6 +383,12 @@
         ws.send(JSON.stringify({ type: "set_worker", ...currentWorker }));
       };
     });
+
+    $("coach").addEventListener("change", () => {
+      directive = $("coach").value.trim();
+      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "set_directive", text: directive }));
+    });
+    $("coach").addEventListener("keydown", (e) => { if (e.key === "Enter") $("coach").blur(); });
 
     draw(); startGravity(); connect();
   </script>

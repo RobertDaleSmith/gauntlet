@@ -36,12 +36,16 @@ class HarnessSession:
         self.prev = None
         self.last_action = None
         self.last_frame = None
+        self.directive: str | None = None
 
     def set_worker(self, worker) -> None:
         self.loop.set_primary(worker)
 
     def set_recovery(self, on: bool) -> None:
         self.loop.recovery_worker = HeuristicWorker() if on else None
+
+    def set_directive(self, text: str | None) -> None:
+        self.directive = (text or "").strip() or None
 
     def _drain(self) -> list[dict]:
         evs = [a.to_dict() for a in self._events]
@@ -79,6 +83,9 @@ class HarnessSession:
         # Give vision workers the frame out-of-band (keeps the Worker protocol clean).
         if frame is not None and hasattr(self.loop.worker, "set_frame"):
             self.loop.worker.set_frame(frame)
+        # Hand the coach directive to workers that accept one (LLM workers).
+        if hasattr(self.loop.worker, "set_directive"):
+            self.loop.worker.set_directive(self.directive)
 
         # Agent perception: a pixel-derived board (vision-only) if provided, else
         # ground truth. The referee above already graded on ground truth.
@@ -117,6 +124,7 @@ class HarnessSession:
             "model": getattr(self.loop.worker, "model", None),
             "perception": getattr(self.loop.worker, "perception", None),
             "action": {"buttons": list(action.buttons), "hold_frames": action.hold_frames},
+            "thought": getattr(self.loop.worker, "_last_reason", None),
             "checkpoints": checkpoints,
             "alarms": self._drain(),
         }

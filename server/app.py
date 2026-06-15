@@ -100,6 +100,9 @@ def create_app():
                 elif kind == "set_recovery":
                     session.set_recovery(bool(msg.get("on", True)))
                     await socket.send_json({"type": "recovery_set", "on": bool(msg.get("on", True))})
+                elif kind == "set_directive":
+                    session.set_directive(msg.get("text", ""))
+                    await socket.send_json({"type": "directive_set", "text": msg.get("text", "")})
                 elif kind == "reset":
                     session = HarnessSession(session.loop.primary_worker, db_path=DB_PATH)
                     await socket.send_json({"type": "reset_ok"})

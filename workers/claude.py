@@ -91,12 +91,18 @@ SELECT_SYSTEM = (
     "- bumpiness: surface roughness (LOWER is better)\n\n"
     "Pick the option `id` that plays best: take line clears when available, "
     "otherwise avoid new holes and keep the stack low and flat. Factor in the next "
-    "piece. Return only the chosen id."
+    "piece.\n\n"
+    "If a COACH directive is given, follow it even when it means passing up a line "
+    "clear (e.g. holding clears to set up a bigger one). In `reason`, say very "
+    "briefly (a few words) why you chose this placement."
 )
 
 SELECT_SCHEMA = {
     "type": "object",
-    "properties": {"choice": {"type": "integer"}},
+    "properties": {
+        "choice": {"type": "integer"},
+        "reason": {"type": "string"},
+    },
     "required": ["choice"],
     "additionalProperties": False,
 }
@@ -127,10 +133,16 @@ class ClaudeWorker:
         self.perception = perception
         self._frame: str | None = None
         self._pending: list[str] | None = None  # "json" mode: cached next-piece moves
+        self._directive: str | None = None       # optional coach instruction
+        self._last_reason: str | None = None      # short rationale for the agent log
 
     def set_frame(self, frame: str | None) -> None:
         """Latest rendered frame (data URL) — used only in vision perception mode."""
         self._frame = frame
+
+    def set_directive(self, text: str | None) -> None:
+        """A free-text 'coach' instruction the LLM should honor when deciding."""
+        self._directive = (text or "").strip() or None
 
     def _ensure_client(self):
         if self.client is None:
@@ -256,8 +268,9 @@ class ClaudeWorker:
         content = (
             f"current piece: {current.get('type')}  next piece: {state.raw.get('next')}\n"
             f"placements: {json.dumps(options)}\n"
+            f"COACH directive: {self._directive or 'none'}\n"
             f"feedback: {feedback or 'none'}\n"
-            "Return the `choice` id of the best placement."
+            "Return the `choice` id of the best placement and a short `reason`."
         )
         client = self._ensure_client()
         last_exc: Exception | None = None
@@ -275,10 +288,16 @@ class ClaudeWorker:
                 )
                 if not text:
                     raise ValueError("no text block in response")
-                choice = int(json.loads(text).get("choice", 0))
+                data = json.loads(text)
+                choice = int(data.get("choice", 0))
                 if not 0 <= choice < len(cands):
                     choice = 0
-                return Action(tuple(cands[choice]["moves"]) or ("DROP",), 6)
+                pick = cands[choice]
+                reason = (data.get("reason") or "").strip()
+                self._last_reason = (
+                    f"{reason} " if reason else ""
+                ) + f"(clears {pick['lines']}, holes {pick['holes']}, h{pick['max_h']})"
+                return Action(tuple(pick["moves"]) or ("DROP",), 6)
             except Exception as e:
                 last_exc = e
                 import time
