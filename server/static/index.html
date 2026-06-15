@@ -68,7 +68,8 @@
           <button class="wbtn" data-worker="sloppy">Sloppy (ignores right side)</button>
           <button class="wbtn" data-worker="scripted">Reckless</button>
           <div class="seclabel">Coach — tell the LLM how to play</div>
-          <input id="coach" class="coach" placeholder="e.g. set up a tetris before clearing lines" />
+          <input id="coach" class="coach" placeholder="e.g. build flat, clear when forced — press Enter" />
+          <div id="coachStatus" class="hint" style="max-width:none"></div>
           <div class="seclabel">Harness</div>
           <button id="recoveryBtn" class="active">Recovery: ON</button>
         </div>
@@ -267,6 +268,8 @@
         $("recoveryBtn").classList.toggle("active", msg.on);
       } else if (msg.type === "reset_ok") {
         game.reset(); draw();
+      } else if (msg.type === "directive_set") {
+        $("coachStatus").textContent = msg.text ? "✓ coaching: " + msg.text : "";
       }
     }
 
