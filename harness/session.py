@@ -48,8 +48,15 @@ class HarnessSession:
         self._events.clear()
         return evs
 
-    def step(self, state_dict: dict, frame: str | None = None) -> dict:
-        """Process one observation from the browser; return the next message."""
+    def step(self, state_dict: dict, frame: str | None = None,
+             vision: dict | None = None) -> dict:
+        """Process one observation from the browser; return the next message.
+
+        `state_dict` is ground truth (the referee grades and persists from it).
+        `vision`, when present, is a board reconstructed from the rendered pixels
+        (no game state) — the *agent* perceives that instead, while the referee
+        still uses ground truth. This is how a worker plays "from video alone".
+        """
         if self.loop.status != "RUNNING":
             return {"type": "stopped", "status": self.loop.status,
                     "checkpoints": [], "alarms": self._drain()}
@@ -73,8 +80,20 @@ class HarnessSession:
         if frame is not None and hasattr(self.loop.worker, "set_frame"):
             self.loop.worker.set_frame(frame)
 
+        # Agent perception: a pixel-derived board (vision-only) if provided, else
+        # ground truth. The referee above already graded on ground truth.
+        worker_state = new
+        if vision and vision.get("board"):
+            from dataclasses import replace
+            worker_state = replace(new, raw={
+                **new.raw,
+                "board": vision.get("board"),
+                "current": vision.get("current"),
+                "next": vision.get("next"),
+            })
+
         try:
-            action = self.loop.decide(new)
+            action = self.loop.decide(worker_state)
         except Exception as e:  # worker misconfig (e.g. missing API key) — fail safe
             self.loop.status = "STOP"
             return {"type": "stopped", "status": "STOP", "error": str(e),

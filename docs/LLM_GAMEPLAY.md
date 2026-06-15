@@ -69,3 +69,18 @@ Turn **Recovery OFF** to see an agent's true, unaided play.
   scored) is large and reproducible.
 - "Plays well" means it clears lines and stays alive, not that it's optimal — the
   built-in heuristic worker (pure Python, El-Tetris) still plays stronger.
+
+## Postscript: playing from video alone (no game state)
+
+To confirm perception was never the bottleneck, we added a vision-only path: the
+browser reconstructs the board **from the rendered pixels** — sample each grid
+cell's center pixel for occupancy, isolate the falling piece as the floating
+connected component — and sends *that* as the agent's perception. The referee
+still grades on ground truth; the agent sees only what the camera could.
+
+The **Heuristic · Vision (pixels only)** agent, playing purely from this
+reconstruction, cleared **35 lines in 90s and kept the stack at height 1–5,
+never topping out** — essentially as strong as it plays on ground truth. So a
+clean grid render is trivially recoverable by CV, and "see the screen, drive the
+controller" works end to end. The perception layer is shared, so the LLM agents
+can run vision-only on the same reconstructed board.

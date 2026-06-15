@@ -83,7 +83,9 @@ def create_app():
                 msg = await socket.receive_json()
                 kind = msg.get("type")
                 if kind == "observe":
-                    out = session.step(msg.get("state", {}), msg.get("frame"))
+                    out = session.step(
+                        msg.get("state", {}), msg.get("frame"), msg.get("vision")
+                    )
                     await socket.send_json(out)
                 elif kind == "set_worker":
                     session.set_worker(_make_worker(

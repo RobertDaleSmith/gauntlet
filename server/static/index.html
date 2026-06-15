@@ -49,6 +49,7 @@
           <button id="replayBtn">⏪ Replay last run</button>
           <div class="seclabel">Agent — plays well, no key</div>
           <button class="wbtn active" data-worker="heuristic">Heuristic (search AI)</button>
+          <button class="wbtn" data-worker="heuristic" data-perception="pixels">Heuristic · Vision (pixels only)</button>
           <div class="seclabel">LLM agent — drives buttons (needs API key)</div>
           <button class="wbtn" data-worker="claude" data-model="claude-haiku-4-5" data-perception="select">Pick · Haiku — harness-scored (plays well)</button>
           <div class="seclabel">Pure-LLM experiments — no scaffolding (see docs/LLM_GAMEPLAY.md)</div>
@@ -150,11 +151,64 @@
     }
     function setConn(cls, text) { $("dot").className = "status-dot " + cls; $("connstatus").textContent = text; }
 
+    // Reconstruct the board from the rendered pixels alone (no game.state()).
+    // The render is a fixed grid of solid colors, so sampling each cell's center
+    // pixel recovers occupancy; the falling piece is the floating connected group.
+    function visionState() {
+      const C = Tetris.CELL, COLS = Tetris.COLS, ROWS = Tetris.ROWS, W = COLS * C;
+      const data = ctx.getImageData(0, 0, W, ROWS * C).data;
+      const filled = [];
+      for (let r = 0; r < ROWS; r++) {
+        filled[r] = [];
+        for (let c = 0; c < COLS; c++) {
+          const i = ((r * C + (C >> 1)) * W + c * C + (C >> 1)) * 4;
+          filled[r][c] = (data[i] < 30 && data[i + 1] < 30 && data[i + 2] < 30) ? 0 : 1;
+        }
+      }
+      // 4-connected components; falling piece = a floating group (<=4 cells, not
+      // on the floor, with no stack cell directly beneath it).
+      const comp = filled.map((row) => row.map(() => false));
+      const groups = [];
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        if (filled[r][c] && !comp[r][c]) {
+          const cells = [], stack = [[r, c]]; comp[r][c] = true;
+          while (stack.length) {
+            const [y, x] = stack.pop(); cells.push([y, x]);
+            for (const [dy, dx] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+              const ny = y + dy, nx = x + dx;
+              if (ny >= 0 && ny < ROWS && nx >= 0 && nx < COLS && filled[ny][nx] && !comp[ny][nx]) {
+                comp[ny][nx] = true; stack.push([ny, nx]);
+              }
+            }
+          }
+          groups.push(cells);
+        }
+      }
+      let piece = null;
+      for (const cells of groups) {
+        if (cells.length > 4) continue;
+        const set = new Set(cells.map(([y, x]) => y + "_" + x));
+        let floating = true, onFloor = false;
+        for (const [y, x] of cells) {
+          if (y === ROWS - 1) onFloor = true;
+          if (y + 1 < ROWS && !set.has((y + 1) + "_" + x) && filled[y + 1][x]) floating = false;
+        }
+        if (floating && !onFloor &&
+            (!piece || Math.min(...cells.map((c) => c[0])) < Math.min(...piece.map((c) => c[0]))))
+          piece = cells;
+      }
+      const board = filled.map((row) => row.slice());
+      if (piece) for (const [y, x] of piece) board[y][x] = 0;
+      return { board, current: piece ? { type: null, cells: piece } : null, next: null };
+    }
+
     function observe() {
       if (!running || !ws || ws.readyState !== 1) return;
       setConn("live", "🤔 agent is thinking…");
       const frame = document.getElementById("screen").toDataURL("image/png");
-      ws.send(JSON.stringify({ type: "observe", state: game.state(), frame }));
+      const msg = { type: "observe", state: game.state(), frame };
+      if (currentWorker.perception === "pixels") msg.vision = visionState();
+      ws.send(JSON.stringify(msg));
     }
 
     // Apply the action's buttons one at a time so the piece visibly slides into
@@ -201,7 +255,8 @@
     }
 
     function workerLabel(worker, model, perception) {
-      if (worker !== "claude") return worker;
+      if (worker !== "claude")
+        return worker === "heuristic" && perception === "pixels" ? "heuristic (vision)" : worker;
       const mode = perception === "vision" ? " (vision)"
         : perception === "json" ? " (plan)"
         : perception === "select" ? " (pick)" : " (state)";
