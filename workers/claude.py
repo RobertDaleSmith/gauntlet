@@ -88,7 +88,11 @@ SELECT_SYSTEM = (
     "- holes: empty cells trapped under filled ones (LOWER is better; holes are "
     "permanent and eventually lose the game)\n"
     "- max_h: resulting stack height (LOWER is better)\n"
-    "- bumpiness: surface roughness (LOWER is better)\n\n"
+    "- bumpiness: surface roughness (LOWER is better)\n"
+    "- col / cols: the column(s) this placement fills (col = leftmost). Together "
+    "with the board's per-column `heights` (index 0 = far left, 9 = far right), "
+    "this tells you WHERE each option builds — use it to follow positional "
+    "directives like 'keep the right column open' or 'build on the left'.\n\n"
     "Pick the option `id` that plays best: take line clears when available, "
     "otherwise avoid new holes and keep the stack low and flat. Factor in the next "
     "piece.\n\n"
@@ -261,12 +265,18 @@ class ClaudeWorker:
             return Action(("DROP",), 6)
 
         options = [
-            {"id": i, "lines": c["lines"], "holes": c["holes"],
-             "max_h": c["max_h"], "bumpiness": c["bumpiness"]}
+            {"id": i, "col": c["col"], "cols": c["cols"], "lines": c["lines"],
+             "holes": c["holes"], "max_h": c["max_h"], "bumpiness": c["bumpiness"]}
             for i, c in enumerate(cands)
+        ]
+        rows_n = len(grid)
+        heights = [
+            next((rows_n - r for r in range(rows_n) if grid[r][c]), 0)
+            for c in range(len(grid[0]))
         ]
         content = (
             f"current piece: {current.get('type')}  next piece: {state.raw.get('next')}\n"
+            f"board column heights (index 0=left .. 9=right): {heights}\n"
             f"placements: {json.dumps(options)}\n"
             f"COACH directive: {self._directive or 'none'}\n"
             f"feedback: {feedback or 'none'}\n"

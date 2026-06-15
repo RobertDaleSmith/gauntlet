@@ -97,7 +97,11 @@ def enumerate_placements(board, cur_abs) -> list[dict]:
                 if all(rr >= 0 for rr, _ in cells) and cells not in seen:
                     seen.add(cells)
                     moves = rot_moves + [key] * steps + ["DROP"]
-                    out.append({"moves": moves, **_features(board, cells, rows, cols)})
+                    occ = sorted({cc for _, cc in cells})
+                    out.append({
+                        "moves": moves, "col": occ[0], "cols": occ,
+                        **_features(board, cells, rows, cols),
+                    })
                 if _collide(board, rel, cx + direction, y0, rows, cols):
                     break
                 cx += direction
