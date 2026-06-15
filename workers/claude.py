@@ -78,6 +78,29 @@ PLAN_SCHEMA = {
     "additionalProperties": False,
 }
 
+# --- "select" perception: harness enumerates placements, LLM judges ---
+# The geometry/arithmetic (where each placement lands, the exact buttons) is done
+# locally in tetris_sim; the model only picks the best option by its consequences.
+SELECT_SYSTEM = (
+    "You are playing Tetris. You're given every legal placement for the current "
+    "piece. Each option lists its consequences:\n"
+    "- lines: rows it clears (HIGHER is better — clearing rows is how you win)\n"
+    "- holes: empty cells trapped under filled ones (LOWER is better; holes are "
+    "permanent and eventually lose the game)\n"
+    "- max_h: resulting stack height (LOWER is better)\n"
+    "- bumpiness: surface roughness (LOWER is better)\n\n"
+    "Pick the option `id` that plays best: take line clears when available, "
+    "otherwise avoid new holes and keep the stack low and flat. Factor in the next "
+    "piece. Return only the chosen id."
+)
+
+SELECT_SCHEMA = {
+    "type": "object",
+    "properties": {"choice": {"type": "integer"}},
+    "required": ["choice"],
+    "additionalProperties": False,
+}
+
 
 def _render_board(state: GameState) -> str:
     """Compact ASCII board: @ = falling piece, # = filled, . = empty."""
@@ -212,7 +235,60 @@ class ClaudeWorker:
                 time.sleep(0.6 * (attempt + 1))
         raise last_exc  # type: ignore[misc]
 
+    def _decide_select(self, state: GameState, feedback: str | None) -> Action:
+        from workers.tetris_sim import enumerate_placements
+
+        board = state.raw.get("board") or []
+        grid = [[1 if cell else 0 for cell in row] for row in board]
+        current = state.raw.get("current", {})
+        cur_abs = [tuple(c) for c in current.get("cells", [])]
+        if not grid or not cur_abs:
+            return Action(("DROP",), 6)
+        cands = enumerate_placements(grid, cur_abs)
+        if not cands:
+            return Action(("DROP",), 6)
+
+        options = [
+            {"id": i, "lines": c["lines"], "holes": c["holes"],
+             "max_h": c["max_h"], "bumpiness": c["bumpiness"]}
+            for i, c in enumerate(cands)
+        ]
+        content = (
+            f"current piece: {current.get('type')}  next piece: {state.raw.get('next')}\n"
+            f"placements: {json.dumps(options)}\n"
+            f"feedback: {feedback or 'none'}\n"
+            "Return the `choice` id of the best placement."
+        )
+        client = self._ensure_client()
+        last_exc: Exception | None = None
+        for attempt in range(3):
+            try:
+                resp = client.messages.create(
+                    model=self.model,
+                    max_tokens=200,
+                    system=SELECT_SYSTEM,
+                    messages=[{"role": "user", "content": content}],
+                    output_config={"format": {"type": "json_schema", "schema": SELECT_SCHEMA}},
+                )
+                text = next(
+                    (b.text for b in resp.content if getattr(b, "type", None) == "text"), None
+                )
+                if not text:
+                    raise ValueError("no text block in response")
+                choice = int(json.loads(text).get("choice", 0))
+                if not 0 <= choice < len(cands):
+                    choice = 0
+                return Action(tuple(cands[choice]["moves"]) or ("DROP",), 6)
+            except Exception as e:
+                last_exc = e
+                import time
+
+                time.sleep(0.6 * (attempt + 1))
+        raise last_exc  # type: ignore[misc]
+
     def decide(self, state: GameState, feedback: str | None) -> Action:
+        if self.perception == "select":
+            return self._decide_select(state, feedback)
         if self.perception == "json":
             return self._decide_plan(state, feedback)
         resp = self._ensure_client().messages.create(

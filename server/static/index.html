@@ -55,6 +55,7 @@
           <button class="wbtn" data-worker="claude" data-model="claude-haiku-4-5" data-perception="vision">Vision · Haiku (sees screen)</button>
           <button class="wbtn" data-worker="claude" data-model="claude-haiku-4-5" data-perception="json">Plan · Haiku (JSON board)</button>
           <button class="wbtn" data-worker="claude" data-model="claude-opus-4-8" data-perception="json">Plan · Opus (JSON board)</button>
+          <button class="wbtn" data-worker="claude" data-model="claude-haiku-4-5" data-perception="select">Pick · Haiku (harness scores)</button>
           <div class="seclabel">Baseline</div>
           <button class="wbtn" data-worker="sloppy">Sloppy (ignores right side)</button>
           <button class="wbtn" data-worker="scripted">Reckless</button>
@@ -201,7 +202,9 @@
 
     function workerLabel(worker, model, perception) {
       if (worker !== "claude") return worker;
-      const mode = perception === "vision" ? " (vision)" : (perception === "json" ? " (plan)" : " (state)");
+      const mode = perception === "vision" ? " (vision)"
+        : perception === "json" ? " (plan)"
+        : perception === "select" ? " (pick)" : " (state)";
       return "claude · " + (model || "").replace("claude-", "") + mode;
     }
     function renderEvents(msg) {
