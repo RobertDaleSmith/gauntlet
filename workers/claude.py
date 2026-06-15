@@ -56,8 +56,13 @@ PLAN_SYSTEM = (
     "Think it through in `plan`: for the CURRENT piece pick a target column and "
     "rotation, mentally drop it (it falls until it hits something) and check it "
     "creates no hole and ideally completes a row; then, assuming it landed there, "
-    "plan the NEXT piece the same way. Keep the stack LOW and FLAT, complete full "
-    "rows whenever possible, and NEVER trap an empty cell under a filled one.\n\n"
+    "plan the NEXT piece the same way. Keep the stack LOW and FLAT and NEVER trap "
+    "an empty cell under a filled one.\n\n"
+    "`rows_by_fill` lists the most-filled rows and the exact columns each is still "
+    "missing. A row CLEARS only when all 10 columns are filled. Your TOP priority is "
+    "to COMPLETE the most-filled row by dropping pieces into its missing columns — "
+    "finish bottom rows fully before spreading pieces out. Clearing rows is how you "
+    "win; a tidy board that never completes a row will still lose.\n\n"
     "Then output `current_moves` and `next_moves`. Each list: zero or more ROTATE, "
     "then move with LEFT or RIGHT (never both in one list), then a single final DROP."
 )
@@ -136,11 +141,22 @@ class ClaudeWorker:
         board = state.raw.get("board") or []
         grid = [[1 if cell else 0 for cell in row] for row in board]
         current = state.raw.get("current", {})
+        # Per-row fill hint: surface the near-complete rows and their exact gaps so
+        # the model can target line completion (its missing skill), not just tidiness.
+        cur_cells = {tuple(c) for c in current.get("cells", [])}
+        rows_by_fill = []
+        for r, row in enumerate(grid):
+            missing = [c for c, v in enumerate(row) if not v and (r, c) not in cur_cells]
+            filled = len(row) - len(missing)
+            if filled:
+                rows_by_fill.append({"row": r, "filled": filled, "missing": missing})
+        rows_by_fill.sort(key=lambda x: -x["filled"])
         payload = {
             "cols": len(grid[0]) if grid else 10,
             "rows": len(grid),
             "current": {"type": current.get("type"), "cells": current.get("cells", [])},
             "next": state.raw.get("next"),
+            "rows_by_fill": rows_by_fill[:6],
             "board": grid,
         }
         stats = (
