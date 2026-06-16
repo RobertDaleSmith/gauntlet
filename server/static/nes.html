@@ -34,9 +34,20 @@
                      width:120px; height:240px; image-rendering:pixelated;"></canvas>
       <div class="hint" style="max-width:130px; text-align:center;">what the agent sees —
         the board reconstructed from pixels only (no RAM)</div>
-      <div class="status" id="nextread" style="font-size:13px;">next: —</div>
-      <div class="hint" style="max-width:130px; text-align:center;">next piece read from the
-        NEXT box — should match the preview on screen</div>
+      <div style="display:flex; gap:16px; justify-content:center;">
+        <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <div class="hint">placing</div>
+          <canvas id="placeView" width="48" height="48"
+                  style="background:#0e0e0e; border:1px solid var(--border); border-radius:6px;
+                         width:48px; height:48px; image-rendering:pixelated;"></canvas>
+        </div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
+          <div class="hint">next</div>
+          <canvas id="nextView" width="48" height="48"
+                  style="background:#0e0e0e; border:1px solid var(--border); border-radius:6px;
+                         width:48px; height:48px; image-rendering:pixelated;"></canvas>
+        </div>
+      </div>
     </div>
   </div>
   <div class="bar">
@@ -63,6 +74,19 @@
     // Calibrated for Nintendo Tetris (USA): centered playfield.
     const WELL = { x0: 96, y0: 48, cell: 8, cols: 10, rows: 20 };
     const vctx = $("vision").getContext("2d");
+    const pvctx = $("placeView").getContext("2d"), nvctx = $("nextView").getContext("2d");
+    let placing = null;   // cells (target orientation) of the piece the agent is currently placing
+    // Draw a tetromino into a 48x48 (4x4 cell) tile, centered, in the vision palette.
+    function drawMini(c, cells, color) {
+      c.fillStyle = "#0e0e0e"; c.fillRect(0, 0, 48, 48);
+      if (!cells || !cells.length) return;
+      const nk = cells.map((p) => [p[0], p[1]]);
+      const mr = Math.min(...nk.map((p) => p[0])), mc = Math.min(...nk.map((p) => p[1]));
+      const h = Math.max(...nk.map((p) => p[0])) - mr + 1, w = Math.max(...nk.map((p) => p[1])) - mc + 1;
+      const offR = (4 - h) / 2, offC = (4 - w) / 2;
+      c.fillStyle = color;
+      for (const [r, cc] of nk) c.fillRect((cc - mc + offC) * 12 + 1, (r - mr + offR) * 12 + 1, 10, 10);
+    }
 
     function vision() {
       const d = image.data;
@@ -283,7 +307,7 @@
             if (rotsNeeded < 0) rotsNeeded = 0;
           } else { target = bestPlacement(board, current); rotsNeeded = 0; }  // first piece only (no known type yet)
           haveTarget = true; rotsDone = 0;
-          try { $("nextread").textContent = "placing " + (curType || "?") + " · rot " + rotsNeeded + " → col " + (target ? target.ox : "?"); } catch (e) {}
+          placing = target ? target.shape : (curType && SPAWN[curType] ? SPAWN[curType] : null);  // tile shows what it's placing
         }
         const box = nextPiece(); if (box) upcoming = box;   // latch the NEXT piece for next time (after deciding this one)
         if (!target) { await sleepFrames(2); continue; }
@@ -329,7 +353,10 @@
         nes.update_pixels(pixels);
         ctx.putImageData(image, 0, 0);
         if ((frames & 3) === 0) { try { renderOverlay(); } catch (e) { /* never break the emulator */ } }
-        if (!agent.on && (frames & 15) === 0) { try { $("nextread").textContent = "next: " + (nextPiece() || "—"); } catch (e) {} }
+        if ((frames & 7) === 0) {   // render the two piece tiles (next = read from box; placing = agent's plan)
+          try { const nt = nextPiece(); drawMini(nvctx, nt && SPAWN[nt] ? SPAWN[nt] : null, "#7f8c9b"); } catch (e) {}
+          try { drawMini(pvctx, agent.on ? placing : null, "#FFB020"); } catch (e) {}
+        }
         if (!agent.on && (frames & 31) === 0) $("status").textContent = "running · frame " + frames;
       }
       raf = requestAnimationFrame(loop);
