@@ -189,7 +189,7 @@
     const frameYield = () => new Promise((r) => requestAnimationFrame(r));
     async function stepRender(n) { stepN(n); await frameYield(); }
     async function tapBtn(btn, hold) {
-      const b = NB[btn](); nes.press_button(b); stepN(hold); nes.release_button(b); await stepRender(2);
+      const b = NB[btn](); nes.press_button(b); stepN(hold); nes.release_button(b); await stepRender(1);
     }
 
     // In-game iff a small (<=4 cell) floating piece DESCENDS over a no-input window.
@@ -225,8 +225,10 @@
         const { board, current } = vision();
         if (!current) { await stepRender(4); continue; }
         const btn = heuristicButton(board, current);
-        if (btn === "DROP") await tapBtn("DROP", 8);
-        else { await tapBtn(btn, 2); await stepRender(2); }
+        // ~3 emulator frames/move (2-frame hold registers reliably + 1 idle) so the
+        // agent positions in time even at killscreen gravity (level 19+, 2 fr/cell).
+        if (btn === "DROP") await tapBtn("DROP", 6);
+        else await tapBtn(btn, 2);
       }
       raf = requestAnimationFrame(loop);  // resume manual rendering
     }
