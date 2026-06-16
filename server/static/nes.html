@@ -263,35 +263,42 @@
         tries++;
       }
       $("status").textContent = inGame ? "agent playing (heuristic)…" : "agent: couldn't reach a game";
-      // Reactive per-tick driver: each tick, perceive and press ONE button toward
-      // the best placement, re-evaluated against the live board. It self-corrects
-      // and is never blocked one column short of a wall — the version that reached
-      // level 19. Do NOT "commit early" to stop the visible re-evaluation; every
-      // variant that did piled pieces and topped out at low levels.
-      //
-      // Soft-drop is a CONTINUOUS hold: once the piece is in place (heuristic says
-      // DROP) we keep Down pressed across ticks so it descends smoothly and fast,
-      // like a human holding Down — not press/release each tick (which stutters).
-      // Down is released the instant a move/rotate is needed (e.g. the next piece).
+      // KNOW the piece, DECIDE once, then EXECUTE — no re-deciding mid-move.
+      // The NEXT-box reader tells us the piece with certainty, and we only act once
+      // the piece is FULLY in view (4 cells) so we never rotate toward a half-entered
+      // blob — that half-entered guessing was the "flipping". The target placement is
+      // computed ONCE per piece and held FIXED; each tick we just step the live piece
+      // toward it: rotate to the target orientation, slide to the target column, then
+      // hold Down to soft-drop. Soft-drop is a continuous hold (smooth, like a human),
+      // released the instant a move/rotate is needed.
       const DOWN = Button.Joypad1Down;
-      let posStart = -1, lastMinR = 99; window.__pos = [];  // instrumentation: frames spent positioning each piece
+      let upcoming = null, curType = null, target = null, haveTarget = false, rots = 0, posStart = -1;
+      window.__pos = [];                        // instrumentation: frames spent positioning each piece
       while (agent.on) {
         const { board, current } = vision();
-        if (!current) { nes.release_button(DOWN); posStart = -1; await sleepFrames(3); continue; }
+        if (!current || current.length < 4) {   // between pieces / still entering -> wait, decide fresh next time
+          nes.release_button(DOWN); haveTarget = false; await sleepFrames(2); continue;
+        }
         const minR = Math.min(...current.map((c) => c[0]));
-        if (minR < lastMinR - 1) posStart = frames;  // a fresh piece appeared up top
-        lastMinR = minR;
-        const btn = heuristicButton(board, current);
-        if (btn === "DROP") {
-          if (posStart >= 0) { window.__pos.push(frames - posStart); posStart = -1; }  // positioning finished
-          nes.press_button(DOWN);       // hold (do not release) -> smooth fast drop
-          await sleepFrames(2);
-        } else {
-          nes.release_button(DOWN);     // need to move/rotate -> stop dropping first
-          await tapBtn(btn, 2);
+        const box = nextPiece();
+        if (minR >= 4 && box) upcoming = box;    // mid-fall: the box reliably shows the NEXT piece — latch it
+        if (!haveTarget) {                       // DECIDE ONCE, the moment this piece is fully visible
+          curType = upcoming;                    // the piece that was "next" last fall is the one spawning now
+          const shape = (curType && SPAWN[curType]) ? SPAWN[curType] : current;
+          target = bestPlacement(board, shape) || bestPlacement(board, current);
+          haveTarget = true; rots = 0; posStart = frames;
+        }
+        if (!target) { await sleepFrames(2); continue; }
+        const curShape = keyStr(normKey(current)), curX = Math.min(...current.map((c) => c[1]));
+        if (curShape !== keyStr(target.shape) && rots < 4) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); rots++; }
+        else if (curX < target.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
+        else if (curX > target.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
+        else {                                   // oriented + aligned -> commit, soft-drop to lock
+          if (posStart >= 0) { window.__pos.push(frames - posStart); posStart = -1; }
+          nes.press_button(DOWN); await sleepFrames(2);
         }
       }
-      releaseAll();                     // let go of every button when stopped
+      releaseAll();                              // let go of every button when stopped
     }
 
     function startAgent() {
@@ -325,9 +332,6 @@
         ctx.putImageData(image, 0, 0);
         if ((frames & 3) === 0) { try { renderOverlay(); } catch (e) { /* never break the emulator */ } }
         if ((frames & 15) === 0) { try { $("nextread").textContent = "next: " + (nextPiece() || "—"); } catch (e) {} }
-        // temporary calibration aid: red box = NEXT-box interior we scan
-        ctx.strokeStyle = "#ff3030"; ctx.lineWidth = 1;
-        ctx.strokeRect(NEXT.x0 - 0.5, NEXT.y0 - 0.5, NEXT.x1 - NEXT.x0 + 1, NEXT.y1 - NEXT.y0 + 1);
         if (!agent.on && (frames & 31) === 0) $("status").textContent = "running · frame " + frames;
       }
       raf = requestAnimationFrame(loop);
