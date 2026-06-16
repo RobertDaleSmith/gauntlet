@@ -286,9 +286,13 @@
           } else { await sleepFrames(1); continue; }   // unknown + not yet full view (rare) -> brief wait
           haveTarget = true; rotsDone = 0; posStart = frames;
         }
-        const minR = Math.min(...current.map((c) => c[0]));
+        // Latch the upcoming piece EVERY tick while the current one falls. (Gating this
+        // on minR>=4 was a bug: once the stack grows, pieces lock above row 4, the latch
+        // never fires, and curType goes stale — so every piece gets planned as the WRONG
+        // piece and the board falls apart. The box reliably shows the NEXT piece during
+        // the fall, so re-reading each tick converges before this piece locks.)
         const box = nextPiece();
-        if (minR >= 4 && box) upcoming = box;     // latch the NEXT piece (after deciding this one)
+        if (box) upcoming = box;
         if (!target) { await sleepFrames(2); continue; }
 
         const full = current.length === 4;
