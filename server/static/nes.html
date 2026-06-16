@@ -307,32 +307,34 @@
       //    partial nearly every frame, so the cached rotate-by-count is what actually
       //    turns pieces when clean reads vanish — no fragile gravity gauge needed.
       const DOWN = Button.Joypad1Down;
-      let upcoming = null, curType = null, inPiece = false, cTarget = null, cRots = 0, rDone = 0;
+      let upcoming = null, curType = null, inPiece = false, cTarget = null, cRots = 0, rDone = 0, posStart = -1;
+      window.__pos = [];                                      // instrumentation: frames spent positioning each piece
       while (agent.on) {
         const { board, current } = vision();
         if (!current) { nes.release_button(DOWN); inPiece = false; await sleepFrames(3); continue; }
         if (!inPiece) {                                       // new piece: claim cached identity + precompute its plan
-          curType = upcoming; inPiece = true;
+          curType = upcoming; inPiece = true; posStart = frames;
           cTarget = (curType && SPAWN[curType]) ? bestPlacement(board, SPAWN[curType]) : null;
           cRots = (cTarget && curType) ? rotationsOf(SPAWN[curType]).findIndex((s) => keyStr(s) === keyStr(cTarget.shape)) : 0;
           if (cRots < 0) cRots = 0; rDone = 0;
         }
         const box = nextPiece(); if (box) upcoming = box;
         const curX = Math.min(...current.map((c) => c[1]));
-        if (current.length === 4) {                          // CLEAR -> ground truth (level-28 reactive; corrects the cache)
+        const drop = () => { if (posStart >= 0) { window.__pos.push(frames - posStart); posStart = -1; } };
+        if (current.length === 4 && !window.__forcePartial) { // CLEAR -> ground truth (level-28 reactive; corrects the cache)
           const best = bestPlacement(board, current);
           placing = best ? best.shape : null;
           if (!best) { await sleepFrames(2); continue; }
           if (keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); rDone++; }
           else if (curX < best.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
           else if (curX > best.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
-          else { nes.press_button(DOWN); await sleepFrames(2); }
+          else { drop(); nes.press_button(DOWN); await sleepFrames(2); }
         } else if (cTarget) {                                // PARTIAL -> cached plan: rotate by count + slide (no flip, no wait)
           placing = cTarget.shape;
           if (rDone < cRots) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); rDone++; }
           else if (curX < cTarget.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
           else if (curX > cTarget.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
-          else { nes.press_button(DOWN); await sleepFrames(1); }                                   // aligned -> soft-drop (kill screen: don't wait for a clear read)
+          else { drop(); nes.press_button(DOWN); await sleepFrames(1); }                           // aligned -> soft-drop (kill screen: don't wait for a clear read)
         } else { await sleepFrames(1); }                     // first piece, still partial, no cache yet -> let it become clear
       }
       releaseAll();                     // let go of every button when stopped
