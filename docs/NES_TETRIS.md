@@ -24,9 +24,11 @@ hard parts, and a staged plan. No code yet — alignment first.
 - **M1 done** (emulator in the harness, ROM boots, controllable) and **M2 done**
   (vision-only board reconstruction; Nintendo well calibrated to x0=96, y0=48,
   8px cells, 10×20). Both on nes-rust.
-- **M3 done — it plays.** A "Start agent" button reboots to a clean title, robustly
-  navigates into a 1-player game (detects a real game by a sparse well + a falling
-  piece, so the color-cycling title can't false-trigger it), then an async
+- **M3 done — it plays.** A "Start agent" button takes over from wherever the game
+  is: if a piece is already falling it plays immediately; otherwise it presses Start
+  to navigate in. In-game is detected by a small piece *descending* over a no-input
+  window — which the static/cycling title and menus can't fake — so it never reboots
+  and you can stop, play manually, and resume at any point. Then an async
   frame-stepping loop plays: perceive (vision) → El-Tetris heuristic (ported to JS)
   → a **reactive per-tick driver** presses ONE button toward the chosen placement,
   re-evaluated against the live board each tick. The agent plays real NES Tetris

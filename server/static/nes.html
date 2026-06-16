@@ -191,28 +191,29 @@
     async function tapBtn(btn, hold) {
       const b = NB[btn](); nes.press_button(b); stepN(hold); nes.release_button(b); await stepRender(2);
     }
-    function wellOcc() {  // occupancy (incl. falling piece) as a bit string, from pixels
-      const d = image.data; let s = "";
-      for (let r = 0; r < WELL.rows; r++) for (let c = 0; c < WELL.cols; c++) {
-        const i = ((WELL.y0 + r * 8 + 4) * W + WELL.x0 + c * 8 + 4) * 4;
-        s += (d[i] > 45 || d[i + 1] > 45 || d[i + 2] > 45) ? "1" : "0";
-      }
-      return s;
-    }
-    const diffStr = (a, b) => { let n = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++; return n; };
 
-    const fillCount = (s) => { let n = 0; for (const ch of s) if (ch === "1") n++; return n; };
+    // In-game iff a small (<=4 cell) floating piece DESCENDS over a no-input window.
+    // Works at any stack height and the static/cycling title can't fake a falling
+    // piece, so it distinguishes "already playing" from title/menus.
+    async function detectInGame() {
+      const p1 = vision().current;
+      await stepRender(18);
+      const p2 = vision().current;
+      if (p1 && p2 && p1.length <= 4 && p2.length <= 4) {
+        const t1 = Math.min(...p1.map((c) => c[0])), t2 = Math.min(...p2.map((c) => c[0]));
+        if (t2 > t1) return true;  // the piece fell -> we're in a game
+      }
+      return false;
+    }
 
     async function agentLoop() {
-      await stepRender(90);  // let the title screen come up after the fresh boot
-      // Navigate to a 1-player game. In-game is detected by a falling piece: the
-      // well is SPARSE (rejects the busy title logo) AND something moved between
-      // two no-input frames (gravity). The title only color-cycles, so it fails both.
-      let inGame = false, tries = 0;
+      // Take over from wherever the game is: if a piece is already falling, just
+      // play; otherwise press Start to navigate into a game (no reboot, so you can
+      // stop, play manually, and start again at any point).
+      let inGame = await detectInGame(), tries = 0;
       while (agent.on && !inGame && tries < 30) {
         nes.press_button(Button.Start); stepN(4); nes.release_button(Button.Start);
-        const a = wellOcc(); await stepRender(28); const c = wellOcc();
-        if (fillCount(c) < 24 && diffStr(a, c) > 4) inGame = true;
+        inGame = await detectInGame();
         tries++;
       }
       $("status").textContent = inGame ? "agent playing (heuristic)…" : "agent: couldn't reach a game";
@@ -231,9 +232,8 @@
     }
 
     function startAgent() {
-      if (!nes || !romBytes || agent.on) return;
-      boot(romBytes);                       // fresh boot -> clean title, deterministic nav
-      if (raf) cancelAnimationFrame(raf);    // boot scheduled the manual loop; the agent drives instead
+      if (!nes || agent.on) return;
+      if (raf) cancelAnimationFrame(raf);    // the agent drives the emulator from here (no reboot)
       agent.on = true; $("agent").textContent = "Stop agent"; $("agent").classList.add("on");
       agentLoop();
     }
