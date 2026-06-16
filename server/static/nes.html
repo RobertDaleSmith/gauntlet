@@ -216,14 +216,18 @@
       return null;
     }
     window.nesNext = nextPiece;  // exposed for calibration/testing
-    function bestPlacement(board, curCells) {
+    // distPenalty (kill-screen only): subtract a small cost for columns far from the
+    // spawn area (~center) so far-travel placements lose ties — fewer pieces need a
+    // long sprint at 1 cell/frame. 0 elsewhere, so normal play is unchanged.
+    function bestPlacement(board, curCells, distPenalty) {
       let best = null;
       for (const shape of rotationsOf(curCells)) {
         const maxc = Math.max(...shape.map((c) => c[1]));
         for (let ox = 0; ox < COLS - maxc; ox++) {
           const oy = dropY(board, shape, ox); if (oy === null) continue;
           const { board: b, cleared } = placeResult(board, shape, oy, ox);
-          const s = scoreBoard(b, cleared);
+          let s = scoreBoard(b, cleared);
+          if (distPenalty) s -= distPenalty * Math.abs(ox - 4);
           if (!best || s > best.s) best = { s, shape, ox };
         }
       }
@@ -314,7 +318,7 @@
         if (!current) { nes.release_button(DOWN); inPiece = false; await sleepFrames(3); continue; }
         if (!inPiece) {                                       // new piece: claim cached identity + precompute its plan
           curType = upcoming; inPiece = true; posStart = frames;
-          cTarget = (curType && SPAWN[curType]) ? bestPlacement(board, SPAWN[curType]) : null;
+          cTarget = (curType && SPAWN[curType]) ? bestPlacement(board, SPAWN[curType], 0.05) : null;  // 0.05 = mild "stay reachable" bias (kill screen)
           cRots = (cTarget && curType) ? rotationsOf(SPAWN[curType]).findIndex((s) => keyStr(s) === keyStr(cTarget.shape)) : 0;
           if (cRots < 0) cRots = 0; rDone = 0;
         }
