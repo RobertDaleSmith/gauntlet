@@ -263,42 +263,48 @@
         tries++;
       }
       $("status").textContent = inGame ? "agent playing (heuristic)…" : "agent: couldn't reach a game";
-      // KNOW the piece, DECIDE once, then EXECUTE — no re-deciding mid-move.
-      // The NEXT-box reader tells us the piece with certainty, and we only act once
-      // the piece is FULLY in view (4 cells) so we never rotate toward a half-entered
-      // blob — that half-entered guessing was the "flipping". The target placement is
-      // computed ONCE per piece and held FIXED; each tick we just step the live piece
-      // toward it: rotate to the target orientation, slide to the target column, then
-      // hold Down to soft-drop. Soft-drop is a continuous hold (smooth, like a human),
-      // released the instant a move/rotate is needed.
+      // KNOW the piece AHEAD OF TIME (from the NEXT box) and act the INSTANT it spawns
+      // — no waiting for it to fully appear. Because we know its identity we also know
+      // its spawn orientation, so we ROTATE BY COUNT (deterministic) without ever
+      // reading the half-entered blob. That removes BOTH the flipping (no blob guessing)
+      // AND the wait (we don't need full view to rotate). Then we slide to the target
+      // column by sight and hold Down to soft-drop. Target is computed ONCE, held fixed.
       const DOWN = Button.Joypad1Down;
-      let upcoming = null, curType = null, target = null, haveTarget = false, rots = 0, posStart = -1;
-      window.__pos = [];                        // instrumentation: frames spent positioning each piece
+      let upcoming = null, curType = null, target = null, rotsNeeded = 0, rotsDone = 0, haveTarget = false, posStart = -1;
+      window.__pos = [];                         // instrumentation: frames spent positioning each piece
       while (agent.on) {
         const { board, current } = vision();
-        if (!current || current.length < 4) {   // between pieces / still entering -> wait, decide fresh next time
-          nes.release_button(DOWN); haveTarget = false; await sleepFrames(2); continue;
+        if (!current) { nes.release_button(DOWN); haveTarget = false; await sleepFrames(2); continue; }
+        if (!haveTarget) {                        // DECIDE the instant the piece appears — using the KNOWN type
+          curType = upcoming;                     // what was "next" during the last fall is spawning now
+          if (curType && SPAWN[curType]) {
+            target = bestPlacement(board, SPAWN[curType]);
+            rotsNeeded = target ? rotationsOf(SPAWN[curType]).findIndex((s) => keyStr(s) === keyStr(target.shape)) : 0;
+            if (rotsNeeded < 0) rotsNeeded = 0;
+          } else if (current.length === 4) {      // unknown (first piece): fall back to the visible shape
+            target = bestPlacement(board, current); rotsNeeded = 0;
+          } else { await sleepFrames(1); continue; }   // unknown + not yet full view (rare) -> brief wait
+          haveTarget = true; rotsDone = 0; posStart = frames;
         }
         const minR = Math.min(...current.map((c) => c[0]));
         const box = nextPiece();
-        if (minR >= 4 && box) upcoming = box;    // mid-fall: the box reliably shows the NEXT piece — latch it
-        if (!haveTarget) {                       // DECIDE ONCE, the moment this piece is fully visible
-          curType = upcoming;                    // the piece that was "next" last fall is the one spawning now
-          const shape = (curType && SPAWN[curType]) ? SPAWN[curType] : current;
-          target = bestPlacement(board, shape) || bestPlacement(board, current);
-          haveTarget = true; rots = 0; posStart = frames;
-        }
+        if (minR >= 4 && box) upcoming = box;     // latch the NEXT piece (after deciding this one)
         if (!target) { await sleepFrames(2); continue; }
-        const curShape = keyStr(normKey(current)), curX = Math.min(...current.map((c) => c[1]));
-        if (curShape !== keyStr(target.shape) && rots < 4) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); rots++; }
-        else if (curX < target.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
+
+        const full = current.length === 4;
+        const curX = Math.min(...current.map((c) => c[1]));
+        if (rotsDone < rotsNeeded) {              // 1) rotate by count — immediate, no blob reading, no flipping
+          nes.release_button(DOWN); await tapBtn("ROTATE", 2); rotsDone++;
+        } else if (full && keyStr(normKey(current)) !== keyStr(target.shape) && rotsDone < rotsNeeded + 3) {
+          nes.release_button(DOWN); await tapBtn("ROTATE", 2); rotsDone++;   // safety: fix a bad spawn-orientation guess (full view only)
+        } else if (curX < target.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }  // 2) slide while still entering — no wait
         else if (curX > target.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
-        else {                                   // oriented + aligned -> commit, soft-drop to lock
+        else {                                    // 3) oriented + aligned -> commit, soft-drop to lock (no full-view wait)
           if (posStart >= 0) { window.__pos.push(frames - posStart); posStart = -1; }
           nes.press_button(DOWN); await sleepFrames(2);
         }
       }
-      releaseAll();                              // let go of every button when stopped
+      releaseAll();                               // let go of every button when stopped
     }
 
     function startAgent() {
