@@ -297,44 +297,43 @@
       //    to the level-28 driver — and rotate/slide/drop toward bestPlacement.
       // The cache is only a head start; the clear read is ground truth, so a wrong
       // cache self-corrects the moment the piece is visible (no wrong-piece pileups).
+      // Cache = head start; the clean on-screen read = ground truth. Per tick:
+      //  - CLEAR (4 cells): use the REAL piece — exactly the level-28 reactive driver —
+      //    which CORRECTS any cache error. Below the kill screen clean reads are
+      //    frequent, so this keeps everything honest (a wrong cache can't pile up).
+      //  - PARTIAL (< 4 cells, shape unknown): act from the cached plan — rotate by
+      //    COUNT toward the cached target (no blob read -> no flip) and slide to its
+      //    column. This SELF-GATES to the kill screen: at 1 cell/frame the piece is
+      //    partial nearly every frame, so the cached rotate-by-count is what actually
+      //    turns pieces when clean reads vanish — no fragile gravity gauge needed.
       const DOWN = Button.Joypad1Down;
-      let upcoming = null, curType = null, inPiece = false;
-      let ksTarget = null, ksRots = 0, ksDone = 0;             // cached kill-screen plan
-      let gMinR = -1, gFrame = 0, grav = 0.5;                  // gravity gauge: cells/frame during positioning, smoothed
-      const KS = () => grav >= 0.8;                            // ~level 29+ (0.5 cell/frame at 19-28, 1.0 at 29+)
-      const gauge = (minR) => { if (gMinR >= 0 && minR > gMinR && frames > gFrame) grav = 0.8 * grav + 0.2 * ((minR - gMinR) / (frames - gFrame)); gMinR = minR; gFrame = frames; };
+      let upcoming = null, curType = null, inPiece = false, cTarget = null, cRots = 0, rDone = 0;
       while (agent.on) {
         const { board, current } = vision();
-        if (!current) { nes.release_button(DOWN); inPiece = false; gMinR = -1; await sleepFrames(3); continue; }
-        if (!inPiece) {                                        // new piece: claim cached identity + precompute the KS plan
+        if (!current) { nes.release_button(DOWN); inPiece = false; await sleepFrames(3); continue; }
+        if (!inPiece) {                                       // new piece: claim cached identity + precompute its plan
           curType = upcoming; inPiece = true;
-          ksTarget = (curType && SPAWN[curType]) ? bestPlacement(board, SPAWN[curType]) : null;
-          ksRots = (ksTarget && curType) ? rotationsOf(SPAWN[curType]).findIndex((s) => keyStr(s) === keyStr(ksTarget.shape)) : 0;
-          if (ksRots < 0) ksRots = 0; ksDone = 0;
+          cTarget = (curType && SPAWN[curType]) ? bestPlacement(board, SPAWN[curType]) : null;
+          cRots = (cTarget && curType) ? rotationsOf(SPAWN[curType]).findIndex((s) => keyStr(s) === keyStr(cTarget.shape)) : 0;
+          if (cRots < 0) cRots = 0; rDone = 0;
         }
         const box = nextPiece(); if (box) upcoming = box;
-        const minR = Math.min(...current.map((c) => c[0]));
         const curX = Math.min(...current.map((c) => c[1]));
-        const clear = current.length === 4;
-
-        if (KS() && ksTarget) {                               // KILL SCREEN: commit to the cached plan (clean reads too rare to react)
-          placing = ksTarget.shape;
-          if (ksDone < ksRots) { gMinR = -1; nes.release_button(DOWN); await tapBtn("ROTATE", 2); ksDone++; }   // rotate by count, even while partial
-          else if (curX < ksTarget.ox) { gauge(minR); nes.release_button(DOWN); await tapBtn("RIGHT", 2); }      // fast-slide to the cached column
-          else if (curX > ksTarget.ox) { gauge(minR); nes.release_button(DOWN); await tapBtn("LEFT", 2); }
-          else { gMinR = -1; nes.press_button(DOWN); await sleepFrames(1); }                                     // aligned -> quick soft-drop
-          continue;
-        }
-        // SUB-KILL-SCREEN: the proven hybrid (cache head start + clear read = ground truth). Identical inputs; gauge is passive.
-        const shape = clear ? current : (curType && SPAWN[curType] ? SPAWN[curType] : current);
-        const best = bestPlacement(board, shape);
-        placing = best ? best.shape : null;
-        if (!best) { await sleepFrames(2); continue; }
-        if (clear && keyStr(normKey(current)) !== keyStr(best.shape)) { gMinR = -1; nes.release_button(DOWN); await tapBtn("ROTATE", 2); }
-        else if (curX < best.ox) { gauge(minR); nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
-        else if (curX > best.ox) { gauge(minR); nes.release_button(DOWN); await tapBtn("LEFT", 2); }
-        else if (clear) { gMinR = -1; nes.press_button(DOWN); await sleepFrames(2); }
-        else { gauge(minR); await sleepFrames(1); }
+        if (current.length === 4) {                          // CLEAR -> ground truth (level-28 reactive; corrects the cache)
+          const best = bestPlacement(board, current);
+          placing = best ? best.shape : null;
+          if (!best) { await sleepFrames(2); continue; }
+          if (keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); rDone++; }
+          else if (curX < best.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
+          else if (curX > best.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
+          else { nes.press_button(DOWN); await sleepFrames(2); }
+        } else if (cTarget) {                                // PARTIAL -> cached plan: rotate by count + slide (no flip, no wait)
+          placing = cTarget.shape;
+          if (rDone < cRots) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); rDone++; }
+          else if (curX < cTarget.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
+          else if (curX > cTarget.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
+          else { nes.press_button(DOWN); await sleepFrames(1); }                                   // aligned -> soft-drop (kill screen: don't wait for a clear read)
+        } else { await sleepFrames(1); }                     // first piece, still partial, no cache yet -> let it become clear
       }
       releaseAll();                     // let go of every button when stopped
     }
