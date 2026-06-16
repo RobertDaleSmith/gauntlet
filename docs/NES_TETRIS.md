@@ -16,6 +16,11 @@ hard parts, and a staged plan. No code yet — alignment first.
   renders gameplay correctly and has the exact API we need: `step_frame()`,
   `update_pixels()` (RGBA framebuffer), `press_button()/release_button()`.
 - **ROM: Nintendo *Tetris (USA)*** (mapper 1, loads natively — no header hacks).
+- **Vendored nes-rust is patched** (MIT). Stock nes-rust renders active-piece
+  sprites 1px left of the background grid, so a piece visibly snapped 1px right on
+  every lock (confirmed by pixel-diff). Fixed one line in `src/ppu.rs`
+  (`process_sprite_pixels`: `x = base_x + j + 1`) and rebuilt the WASM with
+  wasm-bindgen 0.2.125. Verified: the falling piece now aligns with where it locks.
 - **M1 done** (emulator in the harness, ROM boots, controllable) and **M2 done**
   (vision-only board reconstruction; Nintendo well calibrated to x0=96, y0=48,
   8px cells, 10×20). Both on nes-rust.
