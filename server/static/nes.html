@@ -329,11 +329,11 @@
           else if (curX < best.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
           else if (curX > best.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
           else { drop(); nes.press_button(DOWN); await sleepFrames(2); }
-        } else if (cTarget) {                                // PARTIAL -> cached plan: rotate by count + slide (no flip, no wait)
+        } else if (cTarget) {                                // PARTIAL -> cached plan: rotate by count + FAST slide (rolling)
           placing = cTarget.shape;
-          if (rDone < cRots) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); rDone++; }
-          else if (curX < cTarget.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
-          else if (curX > cTarget.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
+          if (rDone < cRots) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); rDone++; }     // rotation reliable (no self-correct here)
+          else if (curX < cTarget.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 1); }      // fast slide; a missed tap just re-reads + retries
+          else if (curX > cTarget.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 1); }
           else { drop(); nes.press_button(DOWN); await sleepFrames(1); }                           // aligned -> soft-drop (kill screen: don't wait for a clear read)
         } else { await sleepFrames(1); }                     // first piece, still partial, no cache yet -> let it become clear
       }
