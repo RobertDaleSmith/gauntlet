@@ -263,52 +263,29 @@
         tries++;
       }
       $("status").textContent = inGame ? "agent playing (heuristic)…" : "agent: couldn't reach a game";
-      // KNOW the piece AHEAD OF TIME (from the NEXT box) and act the INSTANT it spawns
-      // — no waiting for it to fully appear. Because we know its identity we also know
-      // its spawn orientation, so we ROTATE BY COUNT (deterministic) without ever
-      // reading the half-entered blob. That removes BOTH the flipping (no blob guessing)
-      // AND the wait (we don't need full view to rotate). Then we slide to the target
-      // column by sight and hold Down to soft-drop. Target is computed ONCE, held fixed.
+      // Reactive per-tick driver — THE version that reached level 28 ("every move
+      // ideal"). Each tick: perceive the live board and press ONE button toward the
+      // best placement, re-evaluated every tick. This continuous self-correction is
+      // exactly what lands every placement right under noisy pixel vision. The visible
+      // re-evaluation as a piece settles is that self-correction at work — every
+      // attempt to remove it (decide-once / proactive / deterministic rotation) played
+      // far worse in the real browser, even when headless tests looked fine. Leave it.
+      // Soft-drop is a continuous Down hold (smooth), released the instant a move is
+      // needed. (The NEXT-box reader / nextPiece() stays available but unused here.)
       const DOWN = Button.Joypad1Down;
-      let upcoming = null, curType = null, target = null, rotsNeeded = 0, rotsDone = 0, haveTarget = false, posStart = -1;
-      window.__pos = [];                         // instrumentation: frames spent positioning each piece
       while (agent.on) {
         const { board, current } = vision();
-        if (!current) { nes.release_button(DOWN); haveTarget = false; await sleepFrames(2); continue; }
-        if (!haveTarget) {                        // DECIDE the instant the piece appears — using the KNOWN type
-          curType = upcoming;                     // what was "next" during the last fall is spawning now
-          if (curType && SPAWN[curType]) {
-            target = bestPlacement(board, SPAWN[curType]);
-            rotsNeeded = target ? rotationsOf(SPAWN[curType]).findIndex((s) => keyStr(s) === keyStr(target.shape)) : 0;
-            if (rotsNeeded < 0) rotsNeeded = 0;
-          } else if (current.length === 4) {      // unknown (first piece): fall back to the visible shape
-            target = bestPlacement(board, current); rotsNeeded = 0;
-          } else { await sleepFrames(1); continue; }   // unknown + not yet full view (rare) -> brief wait
-          haveTarget = true; rotsDone = 0; posStart = frames;
-        }
-        // Latch the upcoming piece EVERY tick while the current one falls. (Gating this
-        // on minR>=4 was a bug: once the stack grows, pieces lock above row 4, the latch
-        // never fires, and curType goes stale — so every piece gets planned as the WRONG
-        // piece and the board falls apart. The box reliably shows the NEXT piece during
-        // the fall, so re-reading each tick converges before this piece locks.)
-        const box = nextPiece();
-        if (box) upcoming = box;
-        if (!target) { await sleepFrames(2); continue; }
-
-        const full = current.length === 4;
-        const curX = Math.min(...current.map((c) => c[1]));
-        if (rotsDone < rotsNeeded) {              // 1) rotate by count — immediate, no blob reading, no flipping
-          nes.release_button(DOWN); await tapBtn("ROTATE", 2); rotsDone++;
-        } else if (full && keyStr(normKey(current)) !== keyStr(target.shape) && rotsDone < rotsNeeded + 3) {
-          nes.release_button(DOWN); await tapBtn("ROTATE", 2); rotsDone++;   // safety: fix a bad spawn-orientation guess (full view only)
-        } else if (curX < target.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }  // 2) slide while still entering — no wait
-        else if (curX > target.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
-        else {                                    // 3) oriented + aligned -> commit, soft-drop to lock (no full-view wait)
-          if (posStart >= 0) { window.__pos.push(frames - posStart); posStart = -1; }
-          nes.press_button(DOWN); await sleepFrames(2);
+        if (!current) { nes.release_button(DOWN); await sleepFrames(3); continue; }
+        const btn = heuristicButton(board, current);
+        if (btn === "DROP") {
+          nes.press_button(DOWN);       // hold (do not release) -> smooth fast drop
+          await sleepFrames(2);
+        } else {
+          nes.release_button(DOWN);     // need to move/rotate -> stop dropping first
+          await tapBtn(btn, 2);
         }
       }
-      releaseAll();                               // let go of every button when stopped
+      releaseAll();                     // let go of every button when stopped
     }
 
     function startAgent() {
