@@ -222,29 +222,14 @@
       // and is never blocked one column short of a wall — this is the version that
       // reached level 19. The visible re-evaluation as a piece settles IS that
       // self-correction; do NOT try to "commit early" to stop it — every variant
-      // that did (plan-then-execute, commit-on-drop, global faster timing) piled
-      // pieces and topped out at low levels.
-      //
-      // Killscreen assist (ISOLATED, gated): a passive gravity gauge watches how
-      // far the piece falls per tick — it changes NO inputs. Only once gravity is
-      // killscreen-fast (level ~17+) does fast mode trim the idle frame after a
-      // HORIZONTAL move (6→4 frames) so the agent can still reach its column before
-      // the piece locks. Rotations and drops are untouched (no over-rotation), and
-      // at levels 0–16 fast=false makes this loop byte-identical to the proven one.
-      let prevMinR = -1, fallS = [], fast = false;
+      // that did (plan-then-execute, commit-on-drop, faster timing) piled pieces
+      // and topped out at low levels. Keep this loop simple.
       while (agent.on) {
         const { board, current } = vision();
-        if (!current) { prevMinR = -1; await stepRender(4); continue; }
-        const minR = Math.min(...current.map((c) => c[0]));
-        if (prevMinR >= 0 && minR >= prevMinR) {            // same piece fell by gravity since last tick
-          fallS.push(minR - prevMinR); if (fallS.length > 6) fallS.shift();
-          fast = fallS.reduce((a, b) => a + b, 0) / fallS.length >= 2;  // ~2 cells/tick ≈ level 17+
-        }
+        if (!current) { await stepRender(4); continue; }
         const btn = heuristicButton(board, current);
-        if (btn === "DROP") { await tapBtn("DROP", 8); prevMinR = -1; }
-        else if (btn === "ROTATE") { await tapBtn("ROTATE", 2); await stepRender(2); prevMinR = minR; }
-        else { await tapBtn(btn, 2); if (!fast) await stepRender(2); prevMinR = minR; }  // trim idle only at killscreen
-        if (fast) $("status").textContent = "agent playing (killscreen mode)…";
+        if (btn === "DROP") await tapBtn("DROP", 8);
+        else { await tapBtn(btn, 2); await stepRender(2); }
       }
       raf = requestAnimationFrame(loop);  // resume manual rendering
     }
