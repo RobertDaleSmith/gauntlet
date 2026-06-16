@@ -201,52 +201,40 @@
     }
     const diffStr = (a, b) => { let n = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++; return n; };
 
+    const fillCount = (s) => { let n = 0; for (const ch of s) if (ch === "1") n++; return n; };
+
     async function agentLoop() {
-      // navigate to a game: press Start until gravity is detected (a falling piece)
+      await stepRender(90);  // let the title screen come up after the fresh boot
+      // Navigate to a 1-player game. In-game is detected by a falling piece: the
+      // well is SPARSE (rejects the busy title logo) AND something moved between
+      // two no-input frames (gravity). The title only color-cycles, so it fails both.
       let inGame = false, tries = 0;
-      while (agent.on && !inGame && tries < 24) {
+      while (agent.on && !inGame && tries < 30) {
         nes.press_button(Button.Start); stepN(4); nes.release_button(Button.Start);
-        const a = wellOcc(); await stepRender(30); const c = wellOcc();
-        if (diffStr(a, c) > 6) inGame = true;
+        const a = wellOcc(); await stepRender(28); const c = wellOcc();
+        if (fillCount(c) < 24 && diffStr(a, c) > 4) inGame = true;
         tries++;
       }
       $("status").textContent = inGame ? "agent playing (heuristic)…" : "agent: couldn't reach a game";
-      // play: perceive -> one button toward the best placement -> step
-      const fillOf = (b) => { let n = 0; for (let r = 0; r < 20; r++) for (let c = 0; c < 10; c++) if (b[r][c]) n++; return n; };
-      const curOf = () => { const v = vision(); return (v.current && v.current.length === 4) ? v.current : null; };
+      // Reactive per-tick driver: each tick, perceive and press ONE button toward
+      // the best placement, re-evaluated against the live board. It self-corrects
+      // and is never blocked one column short of a wall — this is the version that
+      // reached level 10. (A per-piece driver with a "stuck" guard regressed it.)
       while (agent.on) {
         const { board, current } = vision();
-        if (!current || current.length < 4) { await stepRender(3); continue; }  // wait for a fully-visible piece
-        const target = bestPlacement(board, current);
-        if (!target) { await stepRender(3); continue; }
-        // rotate to the target orientation (guarded so a blocked rotation can't spin forever)
-        for (let i = 0; i < 4 && agent.on; i++) {
-          const c = curOf(); if (!c || keyStr(normKey(c)) === keyStr(target.shape)) break;
-          await tapBtn("ROTATE", 2);
-        }
-        // shuffle to the target column (guarded; stop if a move doesn't register)
-        for (let i = 0; i < 10 && agent.on; i++) {
-          const c = curOf(); if (!c) break;
-          const cx = Math.min(...c.map((x) => x[1]));
-          if (cx === target.ox) break;
-          await tapBtn(cx < target.ox ? "RIGHT" : "LEFT", 2);
-          const c2 = curOf(); if (c2 && Math.min(...c2.map((x) => x[1])) === cx) break;  // wall / stuck
-        }
-        // commit the drop: soft-drop until the piece locks (the stack changes)
-        const before = fillOf(vision().board);
-        nes.press_button(Button.Joypad1Down);
-        let g = 0;
-        while (agent.on && g++ < 60) { stepN(2); const v = vision(); if (!v.current || fillOf(v.board) !== before) break; }
-        nes.release_button(Button.Joypad1Down);
-        await stepRender(4);
+        if (!current) { await stepRender(4); continue; }
+        const btn = heuristicButton(board, current);
+        if (btn === "DROP") await tapBtn("DROP", 8);
+        else { await tapBtn(btn, 2); await stepRender(2); }
       }
       raf = requestAnimationFrame(loop);  // resume manual rendering
     }
 
     function startAgent() {
-      if (!nes || agent.on) return;
+      if (!nes || !romBytes || agent.on) return;
+      boot(romBytes);                       // fresh boot -> clean title, deterministic nav
+      if (raf) cancelAnimationFrame(raf);    // boot scheduled the manual loop; the agent drives instead
       agent.on = true; $("agent").textContent = "Stop agent"; $("agent").classList.add("on");
-      if (raf) cancelAnimationFrame(raf);
       agentLoop();
     }
     function stopAgent() {
