@@ -28,12 +28,21 @@ hard parts, and a staged plan. No code yet — alignment first.
   is: if a piece is already falling it plays immediately; otherwise it presses Start
   to navigate in. In-game is detected by a small piece *descending* over a no-input
   window — which the static/cycling title and menus can't fake — so it never reboots
-  and you can stop, play manually, and resume at any point. Then an async
-  frame-stepping loop plays: perceive (vision) → El-Tetris heuristic (ported to JS)
-  → a **reactive per-tick driver** presses ONE button toward the chosen placement,
-  re-evaluated against the live board each tick. The agent plays real NES Tetris
-  from pixels only, driving the controller, keeping the stack low and clearing
-  lines — it has reached **level 19** (the killscreen). (Hard-won lesson: the
+  and you can stop, play manually, and resume at any point.
+
+  **Architecture (matches a human exactly): the emulator runs continuously at a
+  fixed 60fps and owns the clock; the agent only (1) captures the video via vision()
+  and (2) presses/releases controller buttons — no other manipulation, never steps
+  the emulator.** It watches and presses asynchronously in real time. (Earlier the
+  agent drove the clock itself, frame-stepping as fast as the browser could loop —
+  that made the game fly at hundreds of fps, stutter the soft-drop, and bred a
+  string of timing bugs. The continuous-emulator model fixed all of it at once.)
+  Each tick: perceive (vision) → El-Tetris heuristic (ported to JS) → a **reactive
+  per-tick driver** presses ONE button toward the chosen placement, re-evaluated
+  against the live board; soft-drop is a continuous Down *hold* (smooth/fast, like a
+  human) released the instant a move is needed. The agent plays real NES Tetris from
+  pixels only, driving the controller, keeping the stack low and clearing lines — it
+  has reached **level 19** (the killscreen). (Hard-won lesson: the
   visible per-tick re-evaluation as a piece settles IS the self-correction that
   makes it work under noisy pixel vision. Every attempt to suppress it — a
   per-piece "plan once then execute" driver, a commit-on-drop variant, and faster
@@ -84,13 +93,18 @@ hard parts, and a staged plan. No code yet — alignment first.
   the enumerator/executor must still respect gravity so a piece doesn't fall past
   its target mid-input.
 
-### 2. Real-time vs. our pace — solved by frame-stepping
-An LLM is ~1s/decision; the NES runs 60fps. We **drive the emulator's clock**:
-advance frames under harness control, read the frame, decide a full frame-timed
-input sequence for the current piece, feed it while stepping, run until the piece
-locks, then repeat. We own the clock (legitimate — it's how AI-plays-NES setups
-work). The cost: inputs must be scheduled on the right frames (DAS charge, gravity
-ticks), not just "a list of buttons."
+### 2. Real-time vs. our pace — the emulator owns the clock
+The NES runs 60fps. **The emulator runs continuously at a fixed 60fps; the agent
+never touches its clock — it only captures the video and presses buttons, exactly
+like a human at a controller.** The fast El-Tetris heuristic keeps up easily,
+re-perceiving and nudging the piece each tick. (We tried the opposite — the agent
+driving the clock, frame-stepping as fast as it could — and it bred constant
+trouble: the game flew at hundreds of fps, the soft-drop stuttered, and shared
+clock state caused manual play to run 4–8× too fast after the agent ran. Letting
+the emulator own the clock and treating the agent as a pure observe-and-press
+player removed that whole class of bugs.) A *slower* LLM driver would need to either
+press less often (hold/charge across many frames) or accept frame-step pacing — but
+the deployed heuristic does not.
 
 ### 3. Referee from pixels (no RAM)
 - **Board height / holes:** computed from the reconstructed locked board.

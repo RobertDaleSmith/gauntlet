@@ -181,15 +181,20 @@
                  RIGHT: () => Button.Joypad1Right, DROP: () => Button.Joypad1Down };
     const agent = { on: false };
 
-    function stepN(n) {
-      for (let i = 0; i < n; i++) { nes.step_frame(); frames++; }
-      nes.update_pixels(pixels); ctx.putImageData(image, 0, 0);
-      try { renderOverlay(); } catch (e) {}
-    }
-    const frameYield = () => new Promise((r) => requestAnimationFrame(r));
-    async function stepRender(n) { stepN(n); await frameYield(); }
+    // The emulator runs continuously at 60fps in loop() below — it owns the clock.
+    // The agent NEVER steps the emulator. Exactly like a human, it only (1) reads
+    // the video via vision() and (2) presses/releases controller buttons, waiting
+    // in real time while the game advances on its own. sleepFrames(n) waits ~n
+    // frames of real time; the always-running loop steps the emulator during it.
+    const sleepFrames = (n) => new Promise((r) => setTimeout(r, n * (1000 / 60)));
+    const releaseAll = () => { for (const k in NB) nes.release_button(NB[k]()); nes.release_button(Button.Start); };
+    window.nesFrames = () => frames;  // exposed so a probe can measure real fps
     async function tapBtn(btn, hold) {
-      const b = NB[btn](); nes.press_button(b); stepN(hold); nes.release_button(b); await stepRender(2);
+      const b = NB[btn]();
+      nes.press_button(b);            // hold while the running loop steps ~hold frames
+      await sleepFrames(hold);
+      nes.release_button(b);
+      await sleepFrames(1);
     }
 
     // In-game iff a small (<=4 cell) floating piece DESCENDS over a no-input window.
@@ -197,7 +202,7 @@
     // piece, so it distinguishes "already playing" from title/menus.
     async function detectInGame() {
       const p1 = vision().current;
-      await stepRender(18);
+      await sleepFrames(18);          // just watch while the game runs on its own
       const p2 = vision().current;
       if (p1 && p2 && p1.length <= 4 && p2.length <= 4) {
         const t1 = Math.min(...p1.map((c) => c[0])), t2 = Math.min(...p2.map((c) => c[0]));
@@ -212,39 +217,50 @@
       // stop, play manually, and start again at any point).
       let inGame = await detectInGame(), tries = 0;
       while (agent.on && !inGame && tries < 30) {
-        nes.press_button(Button.Start); stepN(4); nes.release_button(Button.Start);
+        nes.press_button(Button.Start); await sleepFrames(4); nes.release_button(Button.Start);
+        await sleepFrames(6);
         inGame = await detectInGame();
         tries++;
       }
       $("status").textContent = inGame ? "agent playing (heuristic)…" : "agent: couldn't reach a game";
       // Reactive per-tick driver: each tick, perceive and press ONE button toward
       // the best placement, re-evaluated against the live board. It self-corrects
-      // and is never blocked one column short of a wall — this is the version that
-      // reached level 19. The visible re-evaluation as a piece settles IS that
-      // self-correction; do NOT try to "commit early" to stop it — every variant
-      // that did (plan-then-execute, commit-on-drop, faster timing) piled pieces
-      // and topped out at low levels. Keep this loop simple.
+      // and is never blocked one column short of a wall — the version that reached
+      // level 19. Do NOT "commit early" to stop the visible re-evaluation; every
+      // variant that did piled pieces and topped out at low levels.
+      //
+      // Soft-drop is a CONTINUOUS hold: once the piece is in place (heuristic says
+      // DROP) we keep Down pressed across ticks so it descends smoothly and fast,
+      // like a human holding Down — not press/release each tick (which stutters).
+      // Down is released the instant a move/rotate is needed (e.g. the next piece).
+      const DOWN = Button.Joypad1Down;
       while (agent.on) {
         const { board, current } = vision();
-        if (!current) { await stepRender(4); continue; }
+        if (!current) { nes.release_button(DOWN); await sleepFrames(3); continue; }
         const btn = heuristicButton(board, current);
-        if (btn === "DROP") await tapBtn("DROP", 8);
-        else { await tapBtn(btn, 2); await stepRender(2); }
+        if (btn === "DROP") {
+          nes.press_button(DOWN);       // hold (do not release) -> smooth fast drop
+          await sleepFrames(2);
+        } else {
+          nes.release_button(DOWN);     // need to move/rotate -> stop dropping first
+          await tapBtn(btn, 2);
+        }
       }
-      raf = requestAnimationFrame(loop);  // resume manual rendering
+      releaseAll();                     // let go of every button when stopped
     }
 
     function startAgent() {
-      if (!nes || agent.on) return;
-      if (raf) cancelAnimationFrame(raf);    // the agent drives the emulator from here (no reboot)
+      if (!nes || agent.on) return;          // loop() keeps running; the agent only watches + presses buttons
       agent.on = true; $("agent").textContent = "Stop agent"; $("agent").classList.add("on");
       agentLoop();
     }
     function stopAgent() {
       agent.on = false; $("agent").textContent = "Start agent"; $("agent").classList.remove("on");
+      if (nes) releaseAll();
     }
 
-    // Fixed 60 Hz regardless of display refresh (also required for M3 frame-stepping).
+    // Fixed 60 Hz regardless of display refresh — the emulator's clock, always on.
+    // The agent and the keyboard only set button state; this loop alone steps it.
     let acc = 0, lastT = 0;
     const STEP = 1000 / 60;
     function loop(t) {
@@ -263,7 +279,7 @@
         nes.update_pixels(pixels);
         ctx.putImageData(image, 0, 0);
         if ((frames & 3) === 0) { try { renderOverlay(); } catch (e) { /* never break the emulator */ } }
-        if ((frames & 31) === 0) $("status").textContent = "running · frame " + frames;
+        if (!agent.on && (frames & 31) === 0) $("status").textContent = "running · frame " + frames;
       }
       raf = requestAnimationFrame(loop);
     }
