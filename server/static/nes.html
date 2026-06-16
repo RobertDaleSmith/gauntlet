@@ -263,26 +263,37 @@
         tries++;
       }
       $("status").textContent = inGame ? "agent playing (heuristic)…" : "agent: couldn't reach a game";
-      // Reactive per-tick driver — THE version that reached level 28 ("every move
-      // ideal"). Each tick: perceive the live board and press ONE button toward the
-      // best placement, re-evaluated every tick. This continuous self-correction is
-      // exactly what lands every placement right under noisy pixel vision. The visible
-      // re-evaluation as a piece settles is that self-correction at work — every
-      // attempt to remove it (decide-once / proactive / deterministic rotation) played
-      // far worse in the real browser, even when headless tests looked fine. Leave it.
-      // Soft-drop is a continuous Down hold (smooth), released the instant a move is
-      // needed. (The NEXT-box reader / nextPiece() stays available but unused here.)
+      // We KNOW the piece from the NEXT box, and a piece spawns in its DEFAULT
+      // orientation — the same one the NEXT box showed. So we never read the
+      // half-entered blob's shape (no flipping, no waiting): we rotate by a fixed
+      // COUNT from that known spawn orientation to the target. MOVEMENT stays reactive
+      // — the column is re-read every tick and self-corrects, which is the robust part
+      // that survives noisy vision. On-screen "placing:" readout shows what the bot
+      // believes it's holding + how many turns, so misplacements are diagnosable.
       const DOWN = Button.Joypad1Down;
+      let upcoming = null, curType = null, target = null, rotsNeeded = 0, rotsDone = 0, haveTarget = false;
       while (agent.on) {
         const { board, current } = vision();
-        if (!current) { nes.release_button(DOWN); await sleepFrames(3); continue; }
-        const btn = heuristicButton(board, current);
-        if (btn === "DROP") {
-          nes.press_button(DOWN);       // hold (do not release) -> smooth fast drop
-          await sleepFrames(2);
-        } else {
-          nes.release_button(DOWN);     // need to move/rotate -> stop dropping first
-          await tapBtn(btn, 2);
+        if (!current) { nes.release_button(DOWN); haveTarget = false; await sleepFrames(3); continue; }
+        if (!haveTarget) {                        // new piece: decide once from the KNOWN identity + default orientation
+          curType = upcoming;                     // what the NEXT box showed during the last fall is spawning now
+          if (curType && SPAWN[curType]) {
+            target = bestPlacement(board, SPAWN[curType]);
+            rotsNeeded = target ? rotationsOf(SPAWN[curType]).findIndex((s) => keyStr(s) === keyStr(target.shape)) : 0;
+            if (rotsNeeded < 0) rotsNeeded = 0;
+          } else { target = bestPlacement(board, current); rotsNeeded = 0; }  // first piece only (no known type yet)
+          haveTarget = true; rotsDone = 0;
+          try { $("nextread").textContent = "placing " + (curType || "?") + " · rot " + rotsNeeded + " → col " + (target ? target.ox : "?"); } catch (e) {}
+        }
+        const box = nextPiece(); if (box) upcoming = box;   // latch the NEXT piece for next time (after deciding this one)
+        if (!target) { await sleepFrames(2); continue; }
+        if (rotsDone < rotsNeeded) {              // rotate by count — orientation is tracked, never read -> no flip, no wait
+          nes.release_button(DOWN); await tapBtn("ROTATE", 2); rotsDone++;
+        } else {                                  // then slide to the target column (read each tick -> self-correcting)
+          const curX = Math.min(...current.map((c) => c[1]));
+          if (curX < target.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
+          else if (curX > target.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
+          else { nes.press_button(DOWN); await sleepFrames(2); }   // aligned -> soft-drop to lock
         }
       }
       releaseAll();                     // let go of every button when stopped
@@ -318,7 +329,7 @@
         nes.update_pixels(pixels);
         ctx.putImageData(image, 0, 0);
         if ((frames & 3) === 0) { try { renderOverlay(); } catch (e) { /* never break the emulator */ } }
-        if ((frames & 15) === 0) { try { $("nextread").textContent = "next: " + (nextPiece() || "—"); } catch (e) {} }
+        if (!agent.on && (frames & 15) === 0) { try { $("nextread").textContent = "next: " + (nextPiece() || "—"); } catch (e) {} }
         if (!agent.on && (frames & 31) === 0) $("status").textContent = "running · frame " + frames;
       }
       raf = requestAnimationFrame(loop);
