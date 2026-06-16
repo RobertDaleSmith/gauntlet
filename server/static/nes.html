@@ -217,15 +217,24 @@
         tries++;
       }
       $("status").textContent = inGame ? "agent playing (heuristic)…" : "agent: couldn't reach a game";
-      // Reactive per-tick driver: each tick, perceive and press ONE button toward
-      // the best placement, re-evaluated against the live board. It self-corrects
-      // and is never blocked one column short of a wall — this is the version that
-      // reached level 10. (A per-piece driver with a "stuck" guard regressed it.)
+      // Reactive per-tick driver — but it COMMITS once a piece is positioned.
+      // While a piece is still being placed it re-perceives each tick and presses
+      // ONE button toward the best placement (this self-correction in noisy pixel
+      // vision is what reaches the high levels). The moment the heuristic is happy
+      // (says DROP), we lock in and only soft-drop — no more re-deciding, so the
+      // piece stops wiggling/spinning over its target. A hard cap also prevents
+      // ever spinning past one full rotation if an orientation never matches.
+      let committed = false, rotN = 0, lastMin = 99;
       while (agent.on) {
         const { board, current } = vision();
-        if (!current) { await stepRender(4); continue; }
-        const btn = heuristicButton(board, current);
-        if (btn === "DROP") await tapBtn("DROP", 8);
+        if (!current) { committed = false; rotN = 0; lastMin = 99; await stepRender(4); continue; }
+        const minR = Math.min(...current.map((c) => c[0]));
+        if (minR < lastMin - 1) { committed = false; rotN = 0; }  // a fresh piece appeared up top
+        lastMin = minR;
+        if (committed) { await tapBtn("DROP", 8); continue; }     // positioned -> just drop, no re-deciding
+        let btn = heuristicButton(board, current);
+        if (btn === "ROTATE" && ++rotN > 4) btn = "DROP";         // never spin past a full cycle
+        if (btn === "DROP") { committed = true; await tapBtn("DROP", 8); }
         else { await tapBtn(btn, 2); await stepRender(2); }
       }
       raf = requestAnimationFrame(loop);  // resume manual rendering

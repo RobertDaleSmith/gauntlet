@@ -30,14 +30,18 @@ hard parts, and a staged plan. No code yet — alignment first.
   window — which the static/cycling title and menus can't fake — so it never reboots
   and you can stop, play manually, and resume at any point. Then an async
   frame-stepping loop plays: perceive (vision) → El-Tetris heuristic (ported to JS)
-  → a **reactive per-tick driver** presses ONE button toward the chosen placement,
-  re-evaluated against the live board each tick. The agent plays real NES Tetris
-  from pixels only, driving the controller, keeping the stack low and clearing
-  lines — it has reached **level 10**. (Lesson: a "smarter" per-piece driver with a
-  stuck-guard regressed it by stopping one column short of the wall; the simple
-  reactive driver self-corrects and is better.) Topouts still happen on unlucky
-  sequences — it's a strong heuristic, not perfect — but the full vision→decide→
-  drive→play loop works end to end on the real game.
+  → a **reactive-but-committing driver**. While a piece is still being placed it
+  re-perceives each tick and presses ONE button toward the chosen placement — this
+  self-correction in noisy pixel vision is what carries it to the high levels (it
+  has reached **level 19**, the killscreen). The moment the heuristic is satisfied
+  (says DROP) it **commits**: only soft-drops, no more re-deciding, so the piece
+  stops wiggling/spinning over its target; a hard cap also prevents ever spinning
+  past one full rotation. (Lessons: a pure per-piece driver that commits to a
+  single perception piles pieces up and tops out — noisy vision needs the
+  self-correction; and a "stuck-guard" per-piece driver regressed it by stopping
+  one column short of the wall.) Topouts still happen on unlucky sequences and at
+  killscreen speed — it's a strong heuristic, not perfect — but the full
+  vision→decide→drive→play loop works end to end on the real game.
 
 ## Goal & constraints
 
