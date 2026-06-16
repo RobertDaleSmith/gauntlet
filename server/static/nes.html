@@ -15,6 +15,7 @@
     button, label.file { background:#161616; color:#eee; border:1px solid var(--border); border-radius:6px;
              padding:8px 12px; font-size:12px; cursor:pointer; }
     button:hover, label.file:hover { border-color:#444; }
+    button.on { border-color:var(--amber); color:var(--amber); }
     input[type=file] { display:none; }
     .status { color:var(--amber); font-size:12px; font-variant-numeric:tabular-nums; }
     .hint { color:#666; font-size:11px; }
@@ -37,6 +38,7 @@
   </div>
   <div class="bar">
     <label class="file">Load ROM (.nes)<input id="rom" type="file" accept=".nes" /></label>
+    <button id="agent">Start agent</button>
     <button id="reset">Reset</button>
     <span class="status" id="status">loading emulator…</span>
   </div>
@@ -110,6 +112,147 @@
     }
     window.nesVision = vision;  // exposed for the harness loop (M3)
 
+    // ---- worker: El-Tetris heuristic, ported to JS (board-agnostic) ----
+    const W_AGG = -0.510066, W_LINES = 0.760666, W_HOLES = -0.35663, W_BUMP = -0.184483;
+    const COLS = 10, ROWS = 20;
+    const keyStr = (cells) => cells.map((c) => c[0] + "," + c[1]).join(";");
+    function normKey(cells) {
+      const mr = Math.min(...cells.map((c) => c[0])), mc = Math.min(...cells.map((c) => c[1]));
+      return cells.map(([r, c]) => [r - mr, c - mc]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    }
+    const rotCW = (cells) => normKey(cells.map(([r, c]) => [c, -r]));
+    function rotationsOf(cells) {
+      const out = []; let s = normKey(cells);
+      for (let i = 0; i < 4; i++) { if (!out.some((o) => keyStr(o) === keyStr(s))) out.push(s); s = rotCW(s); }
+      return out;
+    }
+    function collides(board, cells, oy, ox) {
+      for (const [r, c] of cells) { const R = oy + r, C = ox + c;
+        if (C < 0 || C >= COLS || R >= ROWS) return true;
+        if (R >= 0 && board[R][C]) return true; }
+      return false;
+    }
+    function dropY(board, cells, ox) {
+      if (collides(board, cells, -2, ox)) return null;
+      let oy = -2; while (!collides(board, cells, oy + 1, ox)) oy++; return oy;
+    }
+    function placeResult(board, cells, oy, ox) {
+      const b = board.map((r) => r.slice());
+      for (const [r, c] of cells) if (oy + r >= 0) b[oy + r][ox + c] = 1;
+      const kept = b.filter((row) => !row.every((v) => v));
+      const cleared = ROWS - kept.length;
+      while (kept.length < ROWS) kept.unshift(new Array(COLS).fill(0));
+      return { board: kept, cleared };
+    }
+    function scoreBoard(b, cleared) {
+      const heights = new Array(COLS).fill(0); let holes = 0;
+      for (let c = 0; c < COLS; c++) { let seen = false;
+        for (let r = 0; r < ROWS; r++) { if (b[r][c]) { if (!seen) { heights[c] = ROWS - r; seen = true; } } else if (seen) holes++; } }
+      const agg = heights.reduce((a, b) => a + b, 0);
+      let bump = 0; for (let i = 0; i < COLS - 1; i++) bump += Math.abs(heights[i] - heights[i + 1]);
+      return W_AGG * agg + W_LINES * cleared + W_HOLES * holes + W_BUMP * bump;
+    }
+    function bestPlacement(board, curCells) {
+      let best = null;
+      for (const shape of rotationsOf(curCells)) {
+        const maxc = Math.max(...shape.map((c) => c[1]));
+        for (let ox = 0; ox < COLS - maxc; ox++) {
+          const oy = dropY(board, shape, ox); if (oy === null) continue;
+          const { board: b, cleared } = placeResult(board, shape, oy, ox);
+          const s = scoreBoard(b, cleared);
+          if (!best || s > best.s) best = { s, shape, ox };
+        }
+      }
+      return best;
+    }
+    // One controller button toward the chosen placement (re-evaluated each tick).
+    function heuristicButton(board, curCells) {
+      const curShape = normKey(curCells), curX = Math.min(...curCells.map((c) => c[1]));
+      const best = bestPlacement(board, curCells);
+      if (!best) return "DROP";
+      if (keyStr(curShape) !== keyStr(best.shape)) return "ROTATE";
+      if (curX < best.ox) return "RIGHT";
+      if (curX > best.ox) return "LEFT";
+      return "DROP";
+    }
+
+    // ---- agent: frame-stepping control loop (the harness owns the clock) ----
+    const NB = { ROTATE: () => Button.Joypad1A, LEFT: () => Button.Joypad1Left,
+                 RIGHT: () => Button.Joypad1Right, DROP: () => Button.Joypad1Down };
+    const agent = { on: false };
+
+    function stepN(n) {
+      for (let i = 0; i < n; i++) { nes.step_frame(); frames++; }
+      nes.update_pixels(pixels); ctx.putImageData(image, 0, 0);
+      try { renderOverlay(); } catch (e) {}
+    }
+    const frameYield = () => new Promise((r) => requestAnimationFrame(r));
+    async function stepRender(n) { stepN(n); await frameYield(); }
+    async function tapBtn(btn, hold) {
+      const b = NB[btn](); nes.press_button(b); stepN(hold); nes.release_button(b); await stepRender(2);
+    }
+    function wellOcc() {  // occupancy (incl. falling piece) as a bit string, from pixels
+      const d = image.data; let s = "";
+      for (let r = 0; r < WELL.rows; r++) for (let c = 0; c < WELL.cols; c++) {
+        const i = ((WELL.y0 + r * 8 + 4) * W + WELL.x0 + c * 8 + 4) * 4;
+        s += (d[i] > 45 || d[i + 1] > 45 || d[i + 2] > 45) ? "1" : "0";
+      }
+      return s;
+    }
+    const diffStr = (a, b) => { let n = 0; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) n++; return n; };
+
+    async function agentLoop() {
+      // navigate to a game: press Start until gravity is detected (a falling piece)
+      let inGame = false, tries = 0;
+      while (agent.on && !inGame && tries < 24) {
+        nes.press_button(Button.Start); stepN(4); nes.release_button(Button.Start);
+        const a = wellOcc(); await stepRender(30); const c = wellOcc();
+        if (diffStr(a, c) > 6) inGame = true;
+        tries++;
+      }
+      $("status").textContent = inGame ? "agent playing (heuristic)…" : "agent: couldn't reach a game";
+      // play: perceive -> one button toward the best placement -> step
+      const fillOf = (b) => { let n = 0; for (let r = 0; r < 20; r++) for (let c = 0; c < 10; c++) if (b[r][c]) n++; return n; };
+      const curOf = () => { const v = vision(); return (v.current && v.current.length === 4) ? v.current : null; };
+      while (agent.on) {
+        const { board, current } = vision();
+        if (!current || current.length < 4) { await stepRender(3); continue; }  // wait for a fully-visible piece
+        const target = bestPlacement(board, current);
+        if (!target) { await stepRender(3); continue; }
+        // rotate to the target orientation (guarded so a blocked rotation can't spin forever)
+        for (let i = 0; i < 4 && agent.on; i++) {
+          const c = curOf(); if (!c || keyStr(normKey(c)) === keyStr(target.shape)) break;
+          await tapBtn("ROTATE", 2);
+        }
+        // shuffle to the target column (guarded; stop if a move doesn't register)
+        for (let i = 0; i < 10 && agent.on; i++) {
+          const c = curOf(); if (!c) break;
+          const cx = Math.min(...c.map((x) => x[1]));
+          if (cx === target.ox) break;
+          await tapBtn(cx < target.ox ? "RIGHT" : "LEFT", 2);
+          const c2 = curOf(); if (c2 && Math.min(...c2.map((x) => x[1])) === cx) break;  // wall / stuck
+        }
+        // commit the drop: soft-drop until the piece locks (the stack changes)
+        const before = fillOf(vision().board);
+        nes.press_button(Button.Joypad1Down);
+        let g = 0;
+        while (agent.on && g++ < 60) { stepN(2); const v = vision(); if (!v.current || fillOf(v.board) !== before) break; }
+        nes.release_button(Button.Joypad1Down);
+        await stepRender(4);
+      }
+      raf = requestAnimationFrame(loop);  // resume manual rendering
+    }
+
+    function startAgent() {
+      if (!nes || agent.on) return;
+      agent.on = true; $("agent").textContent = "Stop agent"; $("agent").classList.add("on");
+      if (raf) cancelAnimationFrame(raf);
+      agentLoop();
+    }
+    function stopAgent() {
+      agent.on = false; $("agent").textContent = "Start agent"; $("agent").classList.remove("on");
+    }
+
     // Fixed 60 Hz regardless of display refresh (also required for M3 frame-stepping).
     let acc = 0, lastT = 0;
     const STEP = 1000 / 60;
@@ -147,7 +290,8 @@
       r.onload = () => boot(new Uint8Array(r.result));
       r.readAsArrayBuffer(file);
     });
-    $("reset").addEventListener("click", () => { if (romBytes) boot(romBytes); });
+    $("reset").addEventListener("click", () => { if (romBytes) { stopAgent(); boot(romBytes); } });
+    $("agent").addEventListener("click", () => { agent.on ? stopAgent() : startAgent(); });
 
     const KEYS = {
       ArrowUp: () => Button.Joypad1Up, ArrowDown: () => Button.Joypad1Down,
@@ -157,10 +301,10 @@
       Enter: () => Button.Start, Shift: () => Button.Select,
     };
     document.addEventListener("keydown", (e) => {
-      const k = KEYS[e.key]; if (k && nes) { e.preventDefault(); nes.press_button(k()); }
+      const k = KEYS[e.key]; if (k && nes && !agent.on) { e.preventDefault(); nes.press_button(k()); }
     });
     document.addEventListener("keyup", (e) => {
-      const k = KEYS[e.key]; if (k && nes) { e.preventDefault(); nes.release_button(k()); }
+      const k = KEYS[e.key]; if (k && nes && !agent.on) { e.preventDefault(); nes.release_button(k()); }
     });
 
     await init();

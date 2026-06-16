@@ -18,7 +18,18 @@ hard parts, and a staged plan. No code yet — alignment first.
 - **ROM: Nintendo *Tetris (USA)*** (mapper 1, loads natively — no header hacks).
 - **M1 done** (emulator in the harness, ROM boots, controllable) and **M2 done**
   (vision-only board reconstruction; Nintendo well calibrated to x0=96, y0=48,
-  8px cells, 10×20). Both on nes-rust. Next: **M3**.
+  8px cells, 10×20). Both on nes-rust.
+- **M3 pipeline functional.** A "Start agent" button auto-navigates the menus into
+  a 1-player game, then an async frame-stepping loop plays: perceive (vision) →
+  El-Tetris heuristic (ported to JS) chooses a placement → guarded driver rotates,
+  shuffles to the target column, and soft-drops to lock → repeat. The agent
+  genuinely plays real NES Tetris from pixels only, driving the controller, and
+  clears lines. **Play quality is the open item** — it still tops out: drives land
+  ~80–90% at the intended column, but perception/timing noise on taller boards
+  compounds (vs. the perfect-state custom game). Tuning pending (better lock
+  detection, fuller-board perception, possibly next-piece lookahead via the NEXT
+  preview). The hard parts — accurate emulator, vision, frame-stepping, controller
+  driving — all work.
 
 ## Goal & constraints
 
