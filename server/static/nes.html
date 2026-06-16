@@ -250,7 +250,13 @@
     function loop(t) {
       const now = t || lastT;
       if (!lastT) lastT = now;
-      acc += now - lastT; lastT = now;
+      let dt = now - lastT; lastT = now;
+      // Clamp big gaps to one frame. Without this, after the agent runs (or the tab
+      // was hidden) `now - lastT` is thousands of ms; acc balloons and — capped at 4
+      // frames/tick — never drains, so the loop steps 4 frames EVERY rAF forever and
+      // manual play runs 4-8x too fast. Clamping keeps the emulator pinned to 60fps.
+      if (dt > 250) dt = STEP;
+      acc += dt;
       let ran = 0;
       while (acc >= STEP && ran < 4) { nes.step_frame(); acc -= STEP; ran++; frames++; }
       if (ran) {
