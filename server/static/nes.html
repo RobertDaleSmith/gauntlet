@@ -216,18 +216,14 @@
       return null;
     }
     window.nesNext = nextPiece;  // exposed for calibration/testing
-    // distPenalty (kill-screen only): subtract a small cost for columns far from the
-    // spawn area (~center) so far-travel placements lose ties — fewer pieces need a
-    // long sprint at 1 cell/frame. 0 elsewhere, so normal play is unchanged.
-    function bestPlacement(board, curCells, distPenalty) {
+    function bestPlacement(board, curCells) {
       let best = null;
       for (const shape of rotationsOf(curCells)) {
         const maxc = Math.max(...shape.map((c) => c[1]));
         for (let ox = 0; ox < COLS - maxc; ox++) {
           const oy = dropY(board, shape, ox); if (oy === null) continue;
           const { board: b, cleared } = placeResult(board, shape, oy, ox);
-          let s = scoreBoard(b, cleared);
-          if (distPenalty) s -= distPenalty * Math.abs(ox - 4);
+          const s = scoreBoard(b, cleared);
           if (!best || s > best.s) best = { s, shape, ox };
         }
       }
@@ -293,53 +289,33 @@
       $("status").textContent = inGame ? "agent playing (heuristic)…" : "agent: couldn't reach a game";
       // Cache the NEXT piece as a head start, but TRUST the real on-screen read once
       // the piece is clearly in view. Per tick:
-      //  - while the current piece is partially rendered (< 4 cells) its shape is
-      //    UNKNOWN, so we use the cached identity for the target and we DON'T rotate
-      //    (rotating toward a half-entered blob was the "flipping"). We can still slide
-      //    toward the column — that's the head start.
-      //  - the instant it's clearly in view (4 cells) we use the REAL piece — identical
-      //    to the level-28 driver — and rotate/slide/drop toward bestPlacement.
-      // The cache is only a head start; the clear read is ground truth, so a wrong
-      // cache self-corrects the moment the piece is visible (no wrong-piece pileups).
-      // Cache = head start; the clean on-screen read = ground truth. Per tick:
-      //  - CLEAR (4 cells): use the REAL piece — exactly the level-28 reactive driver —
-      //    which CORRECTS any cache error. Below the kill screen clean reads are
-      //    frequent, so this keeps everything honest (a wrong cache can't pile up).
-      //  - PARTIAL (< 4 cells, shape unknown): act from the cached plan — rotate by
-      //    COUNT toward the cached target (no blob read -> no flip) and slide to its
-      //    column. This SELF-GATES to the kill screen: at 1 cell/frame the piece is
-      //    partial nearly every frame, so the cached rotate-by-count is what actually
-      //    turns pieces when clean reads vanish — no fragile gravity gauge needed.
+      //  - while the piece is partially rendered (< 4 cells) its shape is UNKNOWN, so
+      //    use the cached identity for the target and DON'T rotate (rotating toward a
+      //    half-entered blob is the flipping). We can still SLIDE toward the column.
+      //  - the instant it's clearly in view (4 cells) use the REAL piece — exactly the
+      //    level-28 reactive driver — rotate/slide/drop toward bestPlacement.
+      // This reached level 29. Kill-screen variants that rotated on partial / biased
+      // the cached column / rolled the slides all REGRESSED sub-29: the partial branch
+      // runs on EVERY piece's entry (not just the kill screen), so those changes
+      // wiggled pieces back and forth and tanked normal play. Leave it alone.
       const DOWN = Button.Joypad1Down;
-      let upcoming = null, curType = null, inPiece = false, cTarget = null, cRots = 0, rDone = 0, posStart = -1;
-      window.__pos = [];                                      // instrumentation: frames spent positioning each piece
+      let upcoming = null, curType = null, inPiece = false;
       while (agent.on) {
         const { board, current } = vision();
         if (!current) { nes.release_button(DOWN); inPiece = false; await sleepFrames(3); continue; }
-        if (!inPiece) {                                       // new piece: claim cached identity + precompute its plan
-          curType = upcoming; inPiece = true; posStart = frames;
-          cTarget = (curType && SPAWN[curType]) ? bestPlacement(board, SPAWN[curType], 0.05) : null;  // 0.05 = mild "stay reachable" bias (kill screen)
-          cRots = (cTarget && curType) ? rotationsOf(SPAWN[curType]).findIndex((s) => keyStr(s) === keyStr(cTarget.shape)) : 0;
-          if (cRots < 0) cRots = 0; rDone = 0;
-        }
+        if (!inPiece) { curType = upcoming; inPiece = true; }   // new piece: identity = what NEXT cached during the last fall
         const box = nextPiece(); if (box) upcoming = box;
+        const clear = current.length === 4;
+        const shape = clear ? current : (curType && SPAWN[curType] ? SPAWN[curType] : current);
+        const best = bestPlacement(board, shape);
+        placing = best ? best.shape : null;
+        if (!best) { await sleepFrames(2); continue; }
         const curX = Math.min(...current.map((c) => c[1]));
-        const drop = () => { if (posStart >= 0) { window.__pos.push(frames - posStart); posStart = -1; } };
-        if (current.length === 4 && !window.__forcePartial) { // CLEAR -> ground truth (level-28 reactive; corrects the cache)
-          const best = bestPlacement(board, current);
-          placing = best ? best.shape : null;
-          if (!best) { await sleepFrames(2); continue; }
-          if (keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); rDone++; }
-          else if (curX < best.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
-          else if (curX > best.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
-          else { drop(); nes.press_button(DOWN); await sleepFrames(2); }
-        } else if (cTarget) {                                // PARTIAL -> cached plan: rotate by count + FAST slide (rolling)
-          placing = cTarget.shape;
-          if (rDone < cRots) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); rDone++; }     // rotation reliable (no self-correct here)
-          else if (curX < cTarget.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 1); }      // fast slide; a missed tap just re-reads + retries
-          else if (curX > cTarget.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 1); }
-          else { drop(); nes.press_button(DOWN); await sleepFrames(1); }                           // aligned -> soft-drop (kill screen: don't wait for a clear read)
-        } else { await sleepFrames(1); }                     // first piece, still partial, no cache yet -> let it become clear
+        if (clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); }
+        else if (curX < best.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
+        else if (curX > best.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
+        else if (clear) { nes.press_button(DOWN); await sleepFrames(2); }
+        else { await sleepFrames(1); }
       }
       releaseAll();                     // let go of every button when stopped
     }
