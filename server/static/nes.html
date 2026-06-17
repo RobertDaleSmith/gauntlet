@@ -344,19 +344,37 @@
       // runs on EVERY piece's entry (not just the kill screen), so those changes
       // wiggled pieces back and forth and tanked normal play. Leave it alone.
       const DOWN = Button.Joypad1Down;
-      let upcoming = null, curType = null, inPiece = false;
+      let upcoming = null, curType = null, inPiece = false, rotsNeeded = 0, rotsDone = 0;
       while (agent.on) {
         const { board, current } = vision();
         if (!current) { nes.release_button(DOWN); inPiece = false; await sleepFrames(3); continue; }
-        if (!inPiece) { curType = upcoming; inPiece = true; }   // new piece: identity = what NEXT cached during the last fall
+        if (!inPiece) {
+          curType = upcoming; inPiece = true; rotsDone = 0;   // new piece: identity = what NEXT cached during the last fall
+          // Pre-plan the rotation COUNT from the cached identity so the kill-screen branch
+          // can rotate on the PARTIAL view (immediately on spawn) instead of waiting for the
+          // full render. rotationsOf() is clockwise order, A = clockwise, so the index of the
+          // target orientation = number of A taps. (No-op unless we're at the kill screen.)
+          rotsNeeded = 0;
+          if (curType && SPAWN[curType]) {
+            const sp = SPAWN[curType], pb = bestPlacement(board, sp);
+            if (pb) { const i = rotationsOf(sp).findIndex((s) => keyStr(s) === keyStr(pb.shape)); rotsNeeded = i > 0 ? i : 0; }
+          }
+        }
         const box = nextPiece(); if (box) upcoming = box;
         const clear = current.length === 4;
+        const ks = (nesLevel() ?? 0) >= 29;
         const shape = clear ? current : (curType && SPAWN[curType] ? SPAWN[curType] : current);
         const best = bestPlacement(board, shape);
         placing = best ? best.shape : null;
         if (!best) { await sleepFrames(2); continue; }
         const curX = Math.min(...current.map((c) => c[1]));
-        if (clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); }
+        // KILL SCREEN ONLY: rotate immediately on the partial view using the pre-planned
+        // count (don't wait for the full render — at 29 the piece has already dropped 3-4
+        // rows by then, eating the travel budget). Below 29 this never fires, so play is
+        // byte-identical to the proven driver; and the clear branch below is still the
+        // ground-truth that corrects any wrong cached identity once the piece is fully seen.
+        if (ks && !clear && rotsDone < rotsNeeded) { nes.release_button(DOWN); rotsDone++; await tapBtn("ROTATE", 2); }
+        else if (clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); }
         else if (curX < best.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
         else if (curX > best.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
         else if (clear) { nes.press_button(DOWN); await sleepFrames(2); }
