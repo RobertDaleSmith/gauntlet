@@ -48,6 +48,9 @@
                          width:48px; height:48px; image-rendering:pixelated;"></canvas>
         </div>
       </div>
+      <div class="status" id="levelread" style="font-size:13px;">level read: —</div>
+      <div class="hint" style="max-width:140px; text-align:center;">level OCR'd from the HUD —
+        should match the LEVEL box on screen</div>
     </div>
   </div>
   <div class="bar">
@@ -217,6 +220,30 @@
       return null;
     }
     window.nesNext = nextPiece;  // exposed for calibration/testing
+
+    // Read the LEVEL number from the HUD (two 8x8 digit tiles at x=208 and x=216, y=168)
+    // via a 7-segment decode of the NES numeric font. Reliable static-pixel vision (like
+    // nextPiece) — no fragile gravity gauge. The "0" glyph verified: top+sides+bottom lit,
+    // middle empty -> segment key 63 -> 0. Returns the level (0-99) or null if unreadable.
+    const SEG7 = { 63: 0, 6: 1, 91: 2, 79: 3, 102: 4, 109: 5, 125: 6, 7: 7, 127: 8, 111: 9 };
+    function readDigit(x0) {
+      const d = image.data, y0 = 168;
+      const lit = (x, y) => { const i = (y * W + x) * 4; return d[i] > 45 || d[i + 1] > 45 || d[i + 2] > 45; };
+      let k = 0;
+      if (lit(x0 + 4, y0) || lit(x0 + 3, y0 + 1)) k |= 1;        // A  top
+      if (lit(x0 + 6, y0 + 2)) k |= 2;                            // B  top-right
+      if (lit(x0 + 6, y0 + 4)) k |= 4;                            // C  bottom-right
+      if (lit(x0 + 4, y0 + 6) || lit(x0 + 3, y0 + 6)) k |= 8;     // D  bottom
+      if (lit(x0 + 1, y0 + 4) || lit(x0 + 1, y0 + 5)) k |= 16;    // E  bottom-left
+      if (lit(x0 + 1, y0 + 2) || lit(x0 + 2, y0 + 2)) k |= 32;    // F  top-left
+      if (lit(x0 + 4, y0 + 3) || lit(x0 + 3, y0 + 3)) k |= 64;    // G  middle
+      return (k in SEG7) ? SEG7[k] : null;
+    }
+    function nesLevel() {
+      const t = readDigit(208), o = readDigit(216);
+      return (t == null || o == null) ? null : t * 10 + o;
+    }
+    window.nesLevel = nesLevel;  // exposed for calibration/testing
     function bestPlacement(board, curCells) {
       let best = null;
       for (const shape of rotationsOf(curCells)) {
@@ -354,6 +381,7 @@
         if ((frames & 7) === 0) {   // render the two piece tiles (next = read from box; placing = agent's plan)
           try { const nt = nextPiece(); drawMini(nvctx, nt && SPAWN[nt] ? SPAWN[nt] : null, "#7f8c9b"); } catch (e) {}
           try { drawMini(pvctx, agent.on ? placing : null, "#FFB020"); } catch (e) {}
+          try { const lv = nesLevel(); $("levelread").textContent = "level read: " + (lv == null ? "—" : lv); } catch (e) {}
         }
         if (!agent.on && (frames & 31) === 0) $("status").textContent = "running · frame " + frames;
       }
