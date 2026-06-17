@@ -382,26 +382,54 @@
     $("reset").addEventListener("click", () => { if (romBytes) { stopAgent(); boot(romBytes); } });
     $("agent").addEventListener("click", () => { agent.on ? stopAgent() : startAgent(); });
 
-    // Audio: off by default (browser autoplay rules require a click to start it). The
-    // emulator's APU accumulates samples as loop() steps it; a ScriptProcessor pulls
-    // them via update_sample_buffer. The button creates/resumes the AudioContext on
-    // the user gesture, then connects/disconnects the node to unmute/mute.
-    let audioCtx = null, audioNode = null, audioOn = false;
+    // Audio runs OFF the main thread. An AudioWorklet renders the sound on the
+    // dedicated audio thread; the 60fps loop only HANDS it samples (a cheap copy it's
+    // already there to make). So enabling audio cannot steal timing from the agent —
+    // unlike a ScriptProcessor, whose callback runs on the main thread. Off by default
+    // (autoplay rules need a click). loop() feeds audioPort when audioOn (see below).
+    let audioCtx = null, audioNode = null, audioOn = false, audioPort = null;
+    async function setupAudio() {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new AC({ sampleRate: 44100 });
+      // Worklet processor: a FIFO of sample chunks, drained 128 samples per render
+      // quantum on the audio thread; caps backlog (~0.2s) so latency can't grow.
+      const code = `
+        class NesAudio extends AudioWorkletProcessor {
+          constructor() { super(); this.q = []; this.o = 0; this.port.onmessage = (e) => this.q.push(e.data); }
+          process(_, outputs) {
+            const out = outputs[0][0]; let i = 0;
+            while (i < out.length && this.q.length) { const c = this.q[0]; out[i++] = c[this.o++]; if (this.o >= c.length) { this.q.shift(); this.o = 0; } }
+            while (i < out.length) out[i++] = 0;
+            let t = -this.o; for (const c of this.q) t += c.length;
+            while (t > 8820 && this.q.length > 1) { t -= this.q[0].length; this.q.shift(); this.o = 0; }
+            return true;
+          }
+        }
+        registerProcessor('nes-audio', NesAudio);`;
+      await audioCtx.audioWorklet.addModule(URL.createObjectURL(new Blob([code], { type: "application/javascript" })));
+      audioNode = new AudioWorkletNode(audioCtx, "nes-audio", { outputChannelCount: [1] });
+      audioNode.connect(audioCtx.destination);
+      audioPort = audioNode.port;
+      // Feed the worklet from a SEPARATE timer task — never inside the rAF loop. nes-rust's
+      // update_sample_buffer panics ("recursive use") if called in the same flow as
+      // step_frame; a standalone task runs between rAF ticks (like the old audio callback
+      // did), so it's safe. Pull exactly the samples generated since last pull (frames ×
+      // 735 @ 44.1kHz/60fps); the worklet renders them off-thread.
+      // Pull a fixed 4096-sample block on the 44.1kHz cadence. It MUST be the same
+      // Float32Array object every call — a fresh array OR a subarray view both trip a
+      // wasm "recursive use" crash; only the identical reused buffer is safe. Posted
+      // to the worklet, which plays it off-thread.
+      const audioBuf = new Float32Array(4096);
+      setInterval(() => {
+        if (!audioOn || !audioPort || !nes) return;
+        nes.update_sample_buffer(audioBuf);
+        audioPort.postMessage(audioBuf.slice(0));
+      }, 93);   // 4096 / 44100 ≈ 92.9ms — matches generation, keeps the queue balanced
+    }
     $("audio").addEventListener("click", async () => {
-      if (!audioCtx) {
-        const AC = window.AudioContext || window.webkitAudioContext;
-        audioCtx = new AC({ sampleRate: 44100 });
-        audioNode = audioCtx.createScriptProcessor(4096, 0, 1);
-        audioNode.onaudioprocess = (e) => { if (nes) nes.update_sample_buffer(e.outputBuffer.getChannelData(0)); };
-      }
-      if (!audioOn) {
-        await audioCtx.resume();
-        audioNode.connect(audioCtx.destination);
-        audioOn = true; $("audio").textContent = "🔊 Mute"; $("audio").classList.add("on");
-      } else {
-        audioNode.disconnect();
-        audioOn = false; $("audio").textContent = "🔇 Unmute"; $("audio").classList.remove("on");
-      }
+      try { if (!audioCtx) await setupAudio(); } catch (e) { console.warn("audio setup failed", e); return; }
+      if (!audioOn) { await audioCtx.resume(); audioOn = true; $("audio").textContent = "🔊 Mute"; $("audio").classList.add("on"); }
+      else { audioOn = false; $("audio").textContent = "🔇 Unmute"; $("audio").classList.remove("on"); }
     });
 
     const KEYS = {
