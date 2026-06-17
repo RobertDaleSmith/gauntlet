@@ -54,6 +54,7 @@
     <label class="file">Load ROM (.nes)<input id="rom" type="file" accept=".nes" /></label>
     <button id="agent">Start agent</button>
     <button id="reset">Reset</button>
+    <button id="audio">🔇 Unmute</button>
     <span class="status" id="status">loading emulator…</span>
   </div>
   <div class="hint">Controls: ← → ↓ move · ↑ up · <code>Z</code> rotate&nbsp;A · <code>X</code> rotate&nbsp;B ·
@@ -380,6 +381,28 @@
     });
     $("reset").addEventListener("click", () => { if (romBytes) { stopAgent(); boot(romBytes); } });
     $("agent").addEventListener("click", () => { agent.on ? stopAgent() : startAgent(); });
+
+    // Audio: off by default (browser autoplay rules require a click to start it). The
+    // emulator's APU accumulates samples as loop() steps it; a ScriptProcessor pulls
+    // them via update_sample_buffer. The button creates/resumes the AudioContext on
+    // the user gesture, then connects/disconnects the node to unmute/mute.
+    let audioCtx = null, audioNode = null, audioOn = false;
+    $("audio").addEventListener("click", async () => {
+      if (!audioCtx) {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        audioCtx = new AC({ sampleRate: 44100 });
+        audioNode = audioCtx.createScriptProcessor(4096, 0, 1);
+        audioNode.onaudioprocess = (e) => { if (nes) nes.update_sample_buffer(e.outputBuffer.getChannelData(0)); };
+      }
+      if (!audioOn) {
+        await audioCtx.resume();
+        audioNode.connect(audioCtx.destination);
+        audioOn = true; $("audio").textContent = "🔊 Mute"; $("audio").classList.add("on");
+      } else {
+        audioNode.disconnect();
+        audioOn = false; $("audio").textContent = "🔇 Unmute"; $("audio").classList.remove("on");
+      }
+    });
 
     const KEYS = {
       ArrowUp: () => Button.Joypad1Up, ArrowDown: () => Button.Joypad1Down,
