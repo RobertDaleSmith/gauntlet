@@ -306,21 +306,6 @@
       nes.release_button(b);
       await sleepFrames(1);
     }
-    // Frame-ACCURATE wait: resolves the instant the emulator has advanced n frames,
-    // tied to the loop's own frame counter rather than wall-clock setTimeout. setTimeout
-    // fires LATE under main-thread load (rendering + loop + audio all compete), stretching
-    // a "1-frame" sleep to 1.5-2 frames — so a tap meant to be 2 frames becomes 3-4 and the
-    // piece locks before reaching the edge at the kill screen. waitFrames is immune to that.
-    const waitFrames = (n) => new Promise((res) => {
-      const target = frames + n;
-      const chk = () => (frames >= target ? res() : requestAnimationFrame(chk));
-      chk();
-    });
-    async function tapFast(btn) {     // ~2 frames/move, frame-exact — fastest a roll can go
-      const b = NB[btn]();
-      nes.press_button(b); await waitFrames(1); nes.release_button(b); await waitFrames(1);
-    }
-
     // In-game iff a small (<=4 cell) floating piece DESCENDS over a no-input window.
     // Works at any stack height and the static/cycling title can't fake a falling
     // piece, so it distinguishes "already playing" from title/menus.
@@ -370,18 +355,10 @@
         const best = bestPlacement(board, shape);
         placing = best ? best.shape : null;
         if (!best) { await sleepFrames(2); continue; }
-        // At the KILL SCREEN (level >= 29, gravity 1 cell/frame) roll at the fastest a
-        // human can: frame-exact ~2-frames/move taps (tapFast) for shifts AND rotations,
-        // so pieces travel all the way to the outer columns before locking. Gated by the
-        // level OCR, so play below 29 is unchanged; a missed fast tap just re-reads the
-        // column and taps again, so it self-corrects. NO range limit — it must be able to
-        // reach the edges to clear lines there.
-        const ks = (nesLevel() ?? 0) >= 29;
-        const mv = (btn) => (ks ? tapFast(btn) : tapBtn(btn, 2));
         const curX = Math.min(...current.map((c) => c[1]));
-        if (clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); await mv("ROTATE"); }
-        else if (curX < best.ox) { nes.release_button(DOWN); await mv("RIGHT"); }
-        else if (curX > best.ox) { nes.release_button(DOWN); await mv("LEFT"); }
+        if (clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); }
+        else if (curX < best.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
+        else if (curX > best.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
         else if (clear) { nes.press_button(DOWN); await sleepFrames(2); }
         else { await sleepFrames(1); }
       }
