@@ -58,7 +58,7 @@
     <button id="agent">Start agent</button>
     <button id="reset">Reset</button>
     <button id="audio">🔇 Unmute</button>
-    <label class="file" title="Patch gravity so a level-19 start runs at level-29 (kill-screen) speed, and engage the agent's kill-screen logic. Check it, then (re)load the ROM and start a game at level 19."><input id="killtest" type="checkbox" /> 🧪 kill-speed test</label>
+    <label class="file" title="Patch gravity so EVERY level runs at level-29 (kill-screen) speed, and engage the agent's kill-screen logic. Check it, then (re)load the ROM and start a game at any level (0-9 is fine)."><input id="killtest" type="checkbox" /> 🧪 kill-speed test</label>
     <span class="status" id="status">loading emulator…</span>
   </div>
   <div class="hint">Controls: ← → ↓ move · ↑ up · <code>Z</code> rotate&nbsp;A · <code>X</code> rotate&nbsp;B ·
@@ -434,13 +434,16 @@
       romBytes = bytes;                      // keep the original for Reset
       let rom = bytes;
       // TEST ONLY: patch the gravity table (file offset 0x99e, verified NES Tetris) so
-      // levels 19-28 fall at 1 cell/frame — the level-29 kill-screen speed — in a level
-      // the menu can actually start (19). Lets us reproduce the kill screen without
-      // climbing ~230 lines. Also forces the agent's kill-screen logic on. Original ROM
-      // is untouched (we patch a copy); uncheck + Reset to return to normal.
+      // EVERY level falls at 1 cell/frame — the level-29 kill-screen speed — so you can
+      // start at any level the menu offers (0-9, no +10 trick needed) and get kill speed
+      // immediately. Lets us reproduce the kill screen without climbing ~230 lines. Also
+      // forces the agent's kill-screen logic on. Original ROM untouched (we patch a copy);
+      // uncheck + Reset to return to normal. Guarded by the table's signature bytes.
       if ($("killtest") && $("killtest").checked) {
         rom = bytes.slice();
-        for (let L = 19; L <= 28; L++) { const o = 0x99e + L; if (rom[o] === 0x02) rom[o] = 0x01; }
+        if (rom[0x99e] === 0x30 && rom[0x99e + 9] === 0x06) {   // verify it's the gravity table
+          for (let L = 0; L <= 28; L++) rom[0x99e + L] = 0x01;  // all levels -> kill speed
+        }
         window.__forceLevel = 29;
       } else if (window.__forceLevel === 29) {
         delete window.__forceLevel;
