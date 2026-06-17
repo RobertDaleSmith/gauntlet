@@ -262,30 +262,18 @@
     }
     window.nesLevel = nesLevel; window.nesMatchDigit = matchDigit;  // exposed for calibration/testing
 
-    // bestPlacement with an optional REACHABILITY filter (StackRabbit-style), gated to
-    // the kill screen (level >= 29, where gravity = 1 cell/frame). Below 29 there is NO
-    // filter, so play is byte-identical to the level-29-reaching driver. At 29+ a piece
-    // falls ~oy rows before locking, giving ~oy frames; at our ~3-frame input cadence
-    // that's ~oy/3 inputs, ~2 reserved for rotation, the rest for horizontal travel from
-    // the spawn column (~col 4). Placements needing more travel than that are unreachable
-    // and excluded — so we choose a reachable spot instead of one the piece can't get to.
-    // Uses a FIXED spawn reference (not the piece's live position), so the reachable set
-    // is stable per (board, level) -> the target never shifts mid-fall -> no wiggle.
-    function bestPlacement(board, curCells, level) {
-      const ks = (typeof level === "number" && level >= 29);
+    function bestPlacement(board, curCells) {
       let best = null;
       for (const shape of rotationsOf(curCells)) {
         const maxc = Math.max(...shape.map((c) => c[1]));
         for (let ox = 0; ox < COLS - maxc; ox++) {
           const oy = dropY(board, shape, ox); if (oy === null) continue;
-          if (ks && Math.abs(ox - 4) > oy / 3 - 2) continue;   // unreachable at kill-screen speed
           const { board: b, cleared } = placeResult(board, shape, oy, ox);
           const s = scoreBoard(b, cleared);
           if (!best || s > best.s) best = { s, shape, ox };
         }
       }
-      if (best) return best;
-      return ks ? bestPlacement(board, curCells) : null;   // nothing reachable -> ignore the filter
+      return best;
     }
     // One controller button toward the chosen placement (re-evaluated each tick).
     function heuristicButton(board, curCells) {
@@ -365,13 +353,20 @@
         const box = nextPiece(); if (box) upcoming = box;
         const clear = current.length === 4;
         const shape = clear ? current : (curType && SPAWN[curType] ? SPAWN[curType] : current);
-        const best = bestPlacement(board, shape, nesLevel());   // level gates the kill-screen reachability filter (no-op below 29)
+        const best = bestPlacement(board, shape);
         placing = best ? best.shape : null;
         if (!best) { await sleepFrames(2); continue; }
+        // At the KILL SCREEN (level >= 29, gravity 1 cell/frame) tap at ROLLING speed —
+        // 1-frame holds (~2 frames/move, ~30/sec) instead of 2 — so pieces can travel
+        // all the way to the edges before they lock, like top human rollers. Gated by
+        // the level OCR, so play below 29 is unchanged (a missed fast tap just re-reads
+        // the column and taps again, so it self-corrects). NO range limit — it must be
+        // able to reach the outer columns to clear lines there.
+        const hold = ((nesLevel() ?? 0) >= 29) ? 1 : 2;
         const curX = Math.min(...current.map((c) => c[1]));
-        if (clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); }
-        else if (curX < best.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
-        else if (curX > best.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
+        if (clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); await tapBtn("ROTATE", hold); }
+        else if (curX < best.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", hold); }
+        else if (curX > best.ox) { nes.release_button(DOWN); await tapBtn("LEFT", hold); }
         else if (clear) { nes.press_button(DOWN); await sleepFrames(2); }
         else { await sleepFrames(1); }
       }
