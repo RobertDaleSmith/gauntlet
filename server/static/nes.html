@@ -221,29 +221,45 @@
     }
     window.nesNext = nextPiece;  // exposed for calibration/testing
 
-    // Read the LEVEL number from the HUD (two 8x8 digit tiles at x=208 and x=216, y=168)
-    // via a 7-segment decode of the NES numeric font. Reliable static-pixel vision (like
-    // nextPiece) — no fragile gravity gauge. The "0" glyph verified: top+sides+bottom lit,
-    // middle empty -> segment key 63 -> 0. Returns the level (0-99) or null if unreadable.
-    const SEG7 = { 63: 0, 6: 1, 91: 2, 79: 3, 102: 4, 109: 5, 125: 6, 7: 7, 127: 8, 111: 9 };
-    function readDigit(x0) {
-      const d = image.data, y0 = 168;
+    // Read the LEVEL number from the HUD (two 8x8 digit tiles at x=208/216, y=168) by
+    // per-pixel template matching against the NES numeric font. Reliable static-pixel
+    // vision (like nextPiece) — no fragile gravity gauge. The 10 glyph templates were
+    // harvested from the level-select screen (0-9 grid) + high-score table, which use
+    // the SAME font as the in-game LEVEL display (1 and 9 verified pixel-identical).
+    const DIGIT_TMPL = {
+      0: "..###../.#..##./##...##/##...##/##...##/.##..#./..###..",
+      1: "..##../.###../..##../..##../..##../..##../######",
+      2: ".#####./##...##/....###/..####./.####../###..../#######",
+      3: ".######/....##./...##../..####./.....##/##...##/.#####.",
+      4: "...###./..####./.##.##./##..##./#######/....##./....##.",
+      5: "######./##...../######./.....##/.....##/##...##/.#####.",
+      6: "..####./.##..../##...../######./##...##/##...##/.#####.",
+      7: "#######/##...##/....##./...##../..##.../..##.../..##...",
+      8: ".#####./##...##/##...##/.#####./##...##/##...##/.#####.",
+      9: ".#####./##...##/##...##/.######/.....##/....##./.####..",
+    };
+    const pad8 = (s) => { const r = s.split("/"), g = []; for (let i = 0; i < 8; i++) { const row = r[i] || ""; const a = []; for (let c = 0; c < 8; c++) a.push(row[c] === "#" ? 1 : 0); g.push(a); } return g; };
+    const TMPL8 = {}; for (const k in DIGIT_TMPL) TMPL8[k] = pad8(DIGIT_TMPL[k]);
+    function cropGlyph(x0, y0) {   // bbox-crop the glyph in an 8x8 tile -> top-left-aligned 8x8 grid
+      const d = image.data;
       const lit = (x, y) => { const i = (y * W + x) * 4; return d[i] > 45 || d[i + 1] > 45 || d[i + 2] > 45; };
-      let k = 0;
-      if (lit(x0 + 4, y0) || lit(x0 + 3, y0 + 1)) k |= 1;        // A  top
-      if (lit(x0 + 6, y0 + 2)) k |= 2;                            // B  top-right
-      if (lit(x0 + 6, y0 + 4)) k |= 4;                            // C  bottom-right
-      if (lit(x0 + 4, y0 + 6) || lit(x0 + 3, y0 + 6)) k |= 8;     // D  bottom
-      if (lit(x0 + 1, y0 + 4) || lit(x0 + 1, y0 + 5)) k |= 16;    // E  bottom-left
-      if (lit(x0 + 1, y0 + 2) || lit(x0 + 2, y0 + 2)) k |= 32;    // F  top-left
-      if (lit(x0 + 4, y0 + 3) || lit(x0 + 3, y0 + 3)) k |= 64;    // G  middle
-      return (k in SEG7) ? SEG7[k] : null;
+      const cells = []; let minx = 999, miny = 999;
+      for (let y = y0; y < y0 + 8; y++) for (let x = x0; x < x0 + 8; x++) if (lit(x, y)) { cells.push([y - y0, x - x0]); if (x - x0 < minx) minx = x - x0; if (y - y0 < miny) miny = y - y0; }
+      if (cells.length < 4) return null;
+      const g = []; for (let r = 0; r < 8; r++) { const a = []; for (let c = 0; c < 8; c++) a.push(cells.some((p) => p[0] === miny + r && p[1] === minx + c) ? 1 : 0); g.push(a); }
+      return g;
+    }
+    function matchDigit(x0, y0) {     // nearest template by Hamming distance (<=4 = confident)
+      const g = cropGlyph(x0, y0); if (!g) return null;
+      let best = null, bestD = 99;
+      for (const k in TMPL8) { let dist = 0; for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) if (g[r][c] !== TMPL8[k][r][c]) dist++; if (dist < bestD) { bestD = dist; best = +k; } }
+      return bestD <= 4 ? best : null;
     }
     function nesLevel() {
-      const t = readDigit(208), o = readDigit(216);
+      const t = matchDigit(208, 168), o = matchDigit(216, 168);
       return (t == null || o == null) ? null : t * 10 + o;
     }
-    window.nesLevel = nesLevel;  // exposed for calibration/testing
+    window.nesLevel = nesLevel; window.nesMatchDigit = matchDigit;  // exposed for calibration/testing
     function bestPlacement(board, curCells) {
       let best = null;
       for (const shape of rotationsOf(curCells)) {
