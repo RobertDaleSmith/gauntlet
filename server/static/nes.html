@@ -291,6 +291,27 @@
       }
       return best;
     }
+    // 2-PLY LOOKAHEAD (StackRabbit-style): score each current placement by the board it
+    // leaves AFTER the best response with the KNOWN next piece. This is what lets a bot
+    // stack well enough to actually clear lines at kill speed — a single-piece heuristic
+    // greedily flattens and leaves gaps it can't fill. Returns the best CURRENT placement.
+    // ~34*34 board evals (~1-3ms), run once per piece (in the burst), not per tick.
+    function bestPlacement2(board, curCells, nextCells, ks) {
+      const W_ACT = ks ? (typeof window.__wact === "number" ? window.__wact : 0) : 0;
+      let best = null;
+      for (const shape of rotationsOf(curCells)) {
+        const maxc = Math.max(...shape.map((c) => c[1]));
+        for (let ox = 0; ox < COLS - maxc; ox++) {
+          const oy = dropY(board, shape, ox); if (oy === null) continue;
+          const { board: b1, cleared: c1 } = placeResult(board, shape, oy, ox);
+          const resp = bestPlacement(b1, nextCells, ks);          // best response with the next piece
+          let s = W_LINES * c1 + (resp ? resp.s : scoreBoard(b1, c1, ks));  // total lines + resulting 2-piece board
+          if (W_ACT) s -= W_ACT * Math.abs(ox - 4);
+          if (!best || s > best.s) best = { s, shape, ox };
+        }
+      }
+      return best;
+    }
     // One controller button toward the chosen placement (re-evaluated each tick).
     function heuristicButton(board, curCells) {
       const curShape = normKey(curCells), curX = Math.min(...curCells.map((c) => c[1]));
@@ -368,7 +389,7 @@
       // runs on EVERY piece's entry (not just the kill screen), so those changes
       // wiggled pieces back and forth and tanked normal play. Leave it alone.
       const DOWN = Button.Joypad1Down;
-      let upcoming = null, curType = null, inPiece = false, rotsNeeded = 0, rotsDone = 0, dbgTgt = null, dbgX = null, dbgRot = 0, dbgShift = 0;
+      let upcoming = null, curType = null, inPiece = false, rotsNeeded = 0, rotsDone = 0, pieceBest = null, dbgTgt = null, dbgX = null, dbgRot = 0, dbgShift = 0;
       while (agent.on) {
         if (window.__dbg) window.__ticks = (window.__ticks || 0) + 1;
         const { board, current } = vision();
@@ -378,14 +399,18 @@
           if (window.__dbg && dbgTgt != null) { (window.__reach || (window.__reach = [])).push([dbgTgt, dbgX, dbgRot, dbgShift]); }  // [target, actual, rotations, shifts]
           dbgTgt = null; dbgX = null; dbgRot = 0; dbgShift = 0;
           curType = upcoming; inPiece = true; rotsDone = 0;   // new piece: identity = what NEXT cached during the last fall
-          // Pre-plan the rotation COUNT from the cached identity so the kill-screen branch
-          // can rotate on the PARTIAL view (immediately on spawn) instead of waiting for the
-          // full render. rotationsOf() is clockwise order, A = clockwise, so the index of the
-          // target orientation = number of A taps. (No-op unless we're at the kill screen.)
-          rotsNeeded = 0; let burstOx = null;
+          { const nb = nextPiece(); if (nb) upcoming = nb; }  // upcoming now = the piece AFTER current (for lookahead)
+          // Plan the placement ONCE: 2-ply lookahead at the kill screen (score the board
+          // left after the best response with the KNOWN next piece), else the single-piece
+          // heuristic. Then pre-plan the rotation COUNT so the burst can rotate on the
+          // partial view. rotationsOf() is clockwise = A taps. No-op below 29.
+          rotsNeeded = 0; let burstOx = null; pieceBest = null;
           if (!window.__noprep && curType && SPAWN[curType]) {
-            const sp = SPAWN[curType], pb = bestPlacement(board, sp, ks);
-            if (pb) { const i = rotationsOf(sp).findIndex((s) => keyStr(s) === keyStr(pb.shape)); rotsNeeded = i > 0 ? i : 0; burstOx = pb.ox; }
+            const sp = SPAWN[curType];
+            const pb = (ks && !window.__nolook && upcoming && SPAWN[upcoming])
+              ? bestPlacement2(board, sp, SPAWN[upcoming], ks)
+              : bestPlacement(board, sp, ks);
+            if (pb) { const i = rotationsOf(sp).findIndex((s) => keyStr(s) === keyStr(pb.shape)); rotsNeeded = i > 0 ? i : 0; burstOx = pb.ox; pieceBest = pb; }
           }
           // KILL-SCREEN BURST: humans don't re-perceive between roll-taps — they fire the
           // whole input sequence at once. At 29 the per-tick perceive (~0.5 frame/move) is
@@ -408,7 +433,9 @@
         const box = nextPiece(); if (box) upcoming = box;
         const clear = current.length === 4;
         const shape = clear ? current : (curType && SPAWN[curType] ? SPAWN[curType] : current);
-        const best = bestPlacement(board, shape, ks);
+        // At the kill screen, the reactive correction aims at the stored 2-ply plan (so it
+        // verifies/finishes the burst toward the same target, not a different 1-ply spot).
+        const best = (ks && pieceBest) ? pieceBest : bestPlacement(board, shape, ks);
         placing = best ? best.shape : null;
         if (!best) { await sleepFrames(2); continue; }
         const curX = Math.min(...current.map((c) => c[1]));
