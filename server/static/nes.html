@@ -74,6 +74,7 @@
     const pixels = new Uint8Array(image.data.buffer);  // RGBA, written by update_pixels
 
     let nes = null, raf = null, romBytes = null, frames = 0, ready = false;
+    const frameWaiters = [];   // {f: targetFrame, r: resolve} — drained by loop() after each step (frame-accurate agent timing)
 
     // --- vision: reconstruct the 10x20 well from pixels only (no RAM) ---
     // Calibrated for Nintendo Tetris (USA): centered playfield.
@@ -176,13 +177,19 @@
       while (kept.length < ROWS) kept.unshift(new Array(COLS).fill(0));
       return { board: kept, cleared };
     }
-    function scoreBoard(b, cleared) {
+    function scoreBoard(b, cleared, ks) {
       const heights = new Array(COLS).fill(0); let holes = 0;
       for (let c = 0; c < COLS; c++) { let seen = false;
         for (let r = 0; r < ROWS; r++) { if (b[r][c]) { if (!seen) { heights[c] = ROWS - r; seen = true; } } else if (seen) holes++; } }
       const agg = heights.reduce((a, b) => a + b, 0);
       let bump = 0; for (let i = 0; i < COLS - 1; i++) bump += Math.abs(heights[i] - heights[i + 1]);
-      return W_AGG * agg + W_LINES * cleared + W_HOLES * holes + W_BUMP * bump;
+      // Kill-screen profile: steepen height/hole penalties so the stack stays ultra-low
+      // and flat — there's always fall budget (fewer near-misses) and rows can complete.
+      const wa = ks ? (typeof window.__wa === "number" ? window.__wa : 1) : 1;
+      const wh = ks ? (typeof window.__wh === "number" ? window.__wh : 1) : 1;
+      const wm = ks ? (typeof window.__wm === "number" ? window.__wm : 0) : 0;
+      const maxh = ks ? Math.max(...heights) : 0;
+      return wa * W_AGG * agg + W_LINES * cleared + wh * W_HOLES * holes + W_BUMP * bump + wm * W_AGG * maxh;
     }
     // ---- read the NEXT piece from the preview box (pixels only) ----
     // The preview renders the upcoming piece cleanly in a fixed box, so we know the
@@ -263,14 +270,22 @@
     }
     window.nesLevel = nesLevel; window.nesMatchDigit = matchDigit;  // exposed for calibration/testing
 
-    function bestPlacement(board, curCells) {
+    function bestPlacement(board, curCells, ks) {
+      // At the kill screen, add a soft REACHABILITY cost: a piece falls 1 row/frame and
+      // can only travel ~1 column per 2 frames, so far-column placements can't be reached
+      // in time and the piece lands short -> center piles -> topout. Penalizing horizontal
+      // distance from the spawn column biases toward placements the agent can actually
+      // complete, WITHOUT forbidding edges (a clearly-better edge, e.g. a line clear, still
+      // wins). Not a hard filter. Below 29 the weight is 0, so play is unchanged.
+      const W_ACT = ks ? (typeof window.__wact === "number" ? window.__wact : 0) : 0;
       let best = null;
       for (const shape of rotationsOf(curCells)) {
         const maxc = Math.max(...shape.map((c) => c[1]));
         for (let ox = 0; ox < COLS - maxc; ox++) {
           const oy = dropY(board, shape, ox); if (oy === null) continue;
           const { board: b, cleared } = placeResult(board, shape, oy, ox);
-          const s = scoreBoard(b, cleared);
+          let s = scoreBoard(b, cleared, ks);
+          if (W_ACT) s -= W_ACT * Math.abs(ox - 4);
           if (!best || s > best.s) best = { s, shape, ox };
         }
       }
@@ -307,6 +322,14 @@
       nes.release_button(b);
       await sleepFrames(1);
     }
+    // Frame-ACCURATE tap, paced by the emulator loop (not setTimeout): press is held across
+    // exactly one real step_frame so the input is GUARANTEED to register — no missed taps,
+    // so an open-loop burst lands the piece exactly where planned. ~2 frames/move.
+    const nextFrames = (n) => new Promise((r) => frameWaiters.push({ f: frames + n, r }));
+    async function tapAcc(btn) {
+      const b = NB[btn]();
+      nes.press_button(b); await nextFrames(1); nes.release_button(b); await nextFrames(1);
+    }
     // In-game iff a small (<=4 cell) floating piece DESCENDS over a no-input window.
     // Works at any stack height and the static/cycling title can't fake a falling
     // piece, so it distinguishes "already playing" from title/menus.
@@ -325,7 +348,7 @@
       // Take over from wherever the game is: if a piece is already falling, just
       // play; otherwise press Start to navigate into a game (no reboot, so you can
       // stop, play manually, and start again at any point).
-      let inGame = await detectInGame(), tries = 0;
+      let inGame = window.__skipDetect || await detectInGame(), tries = 0;   // __skipDetect: test hook to bypass the slow descent check at kill speed
       while (agent.on && !inGame && tries < 30) {
         nes.press_button(Button.Start); await sleepFrames(4); nes.release_button(Button.Start);
         await sleepFrames(6);
@@ -345,30 +368,51 @@
       // runs on EVERY piece's entry (not just the kill screen), so those changes
       // wiggled pieces back and forth and tanked normal play. Leave it alone.
       const DOWN = Button.Joypad1Down;
-      let upcoming = null, curType = null, inPiece = false, rotsNeeded = 0, rotsDone = 0;
+      let upcoming = null, curType = null, inPiece = false, rotsNeeded = 0, rotsDone = 0, dbgTgt = null, dbgX = null, dbgRot = 0, dbgShift = 0;
       while (agent.on) {
+        if (window.__dbg) window.__ticks = (window.__ticks || 0) + 1;
         const { board, current } = vision();
         if (!current) { nes.release_button(DOWN); inPiece = false; await sleepFrames(3); continue; }
+        const ks = (nesLevel() ?? 0) >= 29;
         if (!inPiece) {
+          if (window.__dbg && dbgTgt != null) { (window.__reach || (window.__reach = [])).push([dbgTgt, dbgX, dbgRot, dbgShift]); }  // [target, actual, rotations, shifts]
+          dbgTgt = null; dbgX = null; dbgRot = 0; dbgShift = 0;
           curType = upcoming; inPiece = true; rotsDone = 0;   // new piece: identity = what NEXT cached during the last fall
           // Pre-plan the rotation COUNT from the cached identity so the kill-screen branch
           // can rotate on the PARTIAL view (immediately on spawn) instead of waiting for the
           // full render. rotationsOf() is clockwise order, A = clockwise, so the index of the
           // target orientation = number of A taps. (No-op unless we're at the kill screen.)
-          rotsNeeded = 0;
-          if (curType && SPAWN[curType]) {
-            const sp = SPAWN[curType], pb = bestPlacement(board, sp);
-            if (pb) { const i = rotationsOf(sp).findIndex((s) => keyStr(s) === keyStr(pb.shape)); rotsNeeded = i > 0 ? i : 0; }
+          rotsNeeded = 0; let burstOx = null;
+          if (!window.__noprep && curType && SPAWN[curType]) {
+            const sp = SPAWN[curType], pb = bestPlacement(board, sp, ks);
+            if (pb) { const i = rotationsOf(sp).findIndex((s) => keyStr(s) === keyStr(pb.shape)); rotsNeeded = i > 0 ? i : 0; burstOx = pb.ox; }
+          }
+          // KILL-SCREEN BURST: humans don't re-perceive between roll-taps — they fire the
+          // whole input sequence at once. At 29 the per-tick perceive (~0.5 frame/move) is
+          // budget the agent can't spare, so on a new piece fire ALL planned rotations +
+          // shifts back-to-back (tracking position, no vision between), then soft-drop. The
+          // next tick re-perceives and the reactive branches correct any miss. Gated to 29.
+          if (ks && !window.__noburst && burstOx != null) {
+            let cx = Math.min(...current.map((c) => c[1])), gx = cx;
+            const bt = window.__acc === false ? ((b) => tapBtn(b, 1)) : tapAcc;   // frame-accurate burst by default
+            for (let r = 0; r < rotsNeeded && agent.on; r++) { nes.release_button(DOWN); await bt("ROTATE"); }
+            rotsDone = rotsNeeded;
+            const vr = vision().current; if (vr && vr.length) cx = Math.min(...vr.map((c) => c[1]));  // rotation moves the bbox -> re-read the real column before shifting
+            let guard = 0;
+            while (cx !== burstOx && guard++ < 10 && agent.on) { const d = cx < burstOx ? 1 : -1; nes.release_button(DOWN); await bt(d > 0 ? "RIGHT" : "LEFT"); cx += d; }
+            nes.press_button(DOWN);
+            if (window.__dbg) { dbgTgt = burstOx; dbgX = cx; dbgRot = rotsNeeded; dbgShift = Math.abs(cx - gx); }
+            continue;
           }
         }
         const box = nextPiece(); if (box) upcoming = box;
         const clear = current.length === 4;
-        const ks = (nesLevel() ?? 0) >= 29;
         const shape = clear ? current : (curType && SPAWN[curType] ? SPAWN[curType] : current);
-        const best = bestPlacement(board, shape);
+        const best = bestPlacement(board, shape, ks);
         placing = best ? best.shape : null;
         if (!best) { await sleepFrames(2); continue; }
         const curX = Math.min(...current.map((c) => c[1]));
+        if (window.__dbg && best) { dbgTgt = best.ox; dbgX = curX; }   // track target vs actual for reach diagnostics
         // At the KILL SCREEN, tap at the human roll rate: hold=1 -> press 1 frame + release 1
         // = 2 frames/move (the NES hard floor), vs hold=2's 3 frames. At 1 row/frame that's
         // the difference between a piece dropping 2 rows per column vs 3 — enough to actually
@@ -379,10 +423,10 @@
         // rows by then, eating the travel budget). Below 29 this never fires, so play is
         // byte-identical to the proven driver; and the clear branch below is still the
         // ground-truth that corrects any wrong cached identity once the piece is fully seen.
-        if (ks && !clear && rotsDone < rotsNeeded) { nes.release_button(DOWN); rotsDone++; await tapBtn("ROTATE", H); }
-        else if (clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); await tapBtn("ROTATE", H); }
-        else if (curX < best.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", H); }
-        else if (curX > best.ox) { nes.release_button(DOWN); await tapBtn("LEFT", H); }
+        if (ks && rotsDone < rotsNeeded) { nes.release_button(DOWN); rotsDone++; dbgRot++; await tapBtn("ROTATE", H); }   // kill: rotate by COUNT, trust it (no re-verify -> no over-rotation from stale reads)
+        else if (!ks && clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); dbgRot++; await tapBtn("ROTATE", H); }   // sub-29: reactive comparison (unchanged)
+        else if (curX < best.ox) { nes.release_button(DOWN); dbgShift++; await tapBtn("RIGHT", H); }
+        else if (curX > best.ox) { nes.release_button(DOWN); dbgShift++; await tapBtn("LEFT", H); }
         else if (clear) { nes.press_button(DOWN); await sleepFrames(2); }
         else { await sleepFrames(1); }
       }
@@ -415,6 +459,10 @@
       acc += dt;
       let ran = 0;
       while (acc >= STEP && ran < 4) { nes.step_frame(); acc -= STEP; ran++; frames++; }
+      // Resolve frame-accurate waiters AFTER stepping, so a button pressed before the wait
+      // was held across a real step_frame (guaranteed input registration) — and the agent
+      // resumes at most once per emulated frame, not per rAF (no over-iteration/race).
+      if (ran && frameWaiters.length) { for (let i = frameWaiters.length - 1; i >= 0; i--) { if (frames >= frameWaiters[i].f) { const w = frameWaiters[i]; frameWaiters.splice(i, 1); w.r(); } } }
       if (ran) {
         nes.update_pixels(pixels);
         ctx.putImageData(image, 0, 0);
