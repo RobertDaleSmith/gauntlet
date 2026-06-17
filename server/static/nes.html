@@ -58,6 +58,7 @@
     <button id="agent">Start agent</button>
     <button id="reset">Reset</button>
     <button id="audio">🔇 Unmute</button>
+    <label class="file" title="Patch gravity so a level-19 start runs at level-29 (kill-screen) speed, and engage the agent's kill-screen logic. Check it, then (re)load the ROM and start a game at level 19."><input id="killtest" type="checkbox" /> 🧪 kill-speed test</label>
     <span class="status" id="status">loading emulator…</span>
   </div>
   <div class="hint">Controls: ← → ↓ move · ↑ up · <code>Z</code> rotate&nbsp;A · <code>X</code> rotate&nbsp;B ·
@@ -430,9 +431,22 @@
 
     function boot(bytes) {
       if (raf) cancelAnimationFrame(raf);
-      romBytes = bytes;
+      romBytes = bytes;                      // keep the original for Reset
+      let rom = bytes;
+      // TEST ONLY: patch the gravity table (file offset 0x99e, verified NES Tetris) so
+      // levels 19-28 fall at 1 cell/frame — the level-29 kill-screen speed — in a level
+      // the menu can actually start (19). Lets us reproduce the kill screen without
+      // climbing ~230 lines. Also forces the agent's kill-screen logic on. Original ROM
+      // is untouched (we patch a copy); uncheck + Reset to return to normal.
+      if ($("killtest") && $("killtest").checked) {
+        rom = bytes.slice();
+        for (let L = 19; L <= 28; L++) { const o = 0x99e + L; if (rom[o] === 0x02) rom[o] = 0x01; }
+        window.__forceLevel = 29;
+      } else if (window.__forceLevel === 29) {
+        delete window.__forceLevel;
+      }
       nes = WasmNes.new();
-      nes.set_rom(bytes);
+      nes.set_rom(rom);
       nes.bootup();
       frames = 0; acc = 0; lastT = 0;
       $("status").textContent = "running…";
@@ -448,6 +462,7 @@
       r.readAsArrayBuffer(file);
     });
     $("reset").addEventListener("click", () => { if (romBytes) { stopAgent(); boot(romBytes); } });
+    $("killtest").addEventListener("change", () => { if (romBytes) { stopAgent(); boot(romBytes); } });  // re-patch on toggle
     $("agent").addEventListener("click", () => { agent.on ? stopAgent() : startAgent(); });
 
     // Audio runs OFF the main thread. An AudioWorklet renders the sound on the
