@@ -368,15 +368,20 @@
         placing = best ? best.shape : null;
         if (!best) { await sleepFrames(2); continue; }
         const curX = Math.min(...current.map((c) => c[1]));
+        // At the KILL SCREEN, tap at the human roll rate: hold=1 -> press 1 frame + release 1
+        // = 2 frames/move (the NES hard floor), vs hold=2's 3 frames. At 1 row/frame that's
+        // the difference between a piece dropping 2 rows per column vs 3 — enough to actually
+        // reach the outer columns before it lands. Below 29, hold=2 (proven, unchanged).
+        const H = ks ? 1 : 2;
         // KILL SCREEN ONLY: rotate immediately on the partial view using the pre-planned
         // count (don't wait for the full render — at 29 the piece has already dropped 3-4
         // rows by then, eating the travel budget). Below 29 this never fires, so play is
         // byte-identical to the proven driver; and the clear branch below is still the
         // ground-truth that corrects any wrong cached identity once the piece is fully seen.
-        if (ks && !clear && rotsDone < rotsNeeded) { nes.release_button(DOWN); rotsDone++; await tapBtn("ROTATE", 2); }
-        else if (clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); await tapBtn("ROTATE", 2); }
-        else if (curX < best.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", 2); }
-        else if (curX > best.ox) { nes.release_button(DOWN); await tapBtn("LEFT", 2); }
+        if (ks && !clear && rotsDone < rotsNeeded) { nes.release_button(DOWN); rotsDone++; await tapBtn("ROTATE", H); }
+        else if (clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); await tapBtn("ROTATE", H); }
+        else if (curX < best.ox) { nes.release_button(DOWN); await tapBtn("RIGHT", H); }
+        else if (curX > best.ox) { nes.release_button(DOWN); await tapBtn("LEFT", H); }
         else if (clear) { nes.press_button(DOWN); await sleepFrames(2); }
         else { await sleepFrames(1); }
       }
