@@ -4,65 +4,98 @@
   <meta charset="utf-8" />
   <title>Joypad Harness — NES Tetris (nes-rust)</title>
   <style>
-    :root { --border:#2a2a2a; --amber:#FFB020; }
-    body { margin:0; font-family:-apple-system, system-ui, sans-serif; background:#0a0a0a; color:#eee;
-           min-height:100vh; display:flex; flex-direction:column; align-items:center; gap:16px; padding:24px 0; box-sizing:border-box; }
-    h1 { font-size:15px; font-weight:600; letter-spacing:.02em; margin:0; }
-    .sub { color:#888; font-size:12px; max-width:560px; text-align:center; line-height:1.5; }
-    canvas#screen { background:#000; border:1px solid var(--border); border-radius:6px;
-             image-rendering:pixelated; width:512px; height:480px; }
-    .bar { display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:center; }
-    button, label.file { background:#161616; color:#eee; border:1px solid var(--border); border-radius:6px;
-             padding:8px 12px; font-size:12px; cursor:pointer; }
-    button:hover, label.file:hover { border-color:#444; }
-    button.on { border-color:var(--amber); color:var(--amber); }
+    :root { --border:#262629; --amber:#FFB020; --panel:#111114; --muted:#8a8a90; --ink:#ececf0; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:-apple-system, system-ui, "Segoe UI", sans-serif; color:var(--ink);
+      background:radial-gradient(1200px 700px at 50% -15%, #18181d 0%, #0a0a0c 62%);
+      min-height:100vh; display:flex; align-items:center; justify-content:center; padding:26px; }
+    .stage { width:1000px; max-width:100%; background:linear-gradient(180deg,#111113,#0b0b0d);
+      border:1px solid var(--border); border-radius:18px; padding:18px 22px 16px;
+      box-shadow:0 30px 80px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.03); }
+    /* header */
+    .topbar { display:flex; align-items:center; gap:14px; padding:6px 2px 16px; border-bottom:1px solid var(--border); }
+    .brand { display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.09em; font-size:14px; white-space:nowrap; }
+    .dot { width:9px; height:9px; border-radius:50%; background:var(--amber); box-shadow:0 0 14px var(--amber); }
+    .tag { color:var(--muted); font-size:12px; line-height:1.45; flex:1; }
+    .tag b { color:#c9c9cf; font-weight:600; }
+    .badges { display:flex; gap:7px; flex-shrink:0; }
+    .badge { font-size:9.5px; letter-spacing:.07em; text-transform:uppercase; color:#c2c2c8; background:#191920;
+      border:1px solid var(--border); border-radius:999px; padding:4px 10px; }
+    /* main */
+    .main { display:flex; gap:18px; padding:18px 2px; align-items:stretch; }
+    .screen-wrap { padding:9px; background:#000; border:1px solid var(--border); border-radius:12px;
+      box-shadow:inset 0 0 0 1px #161616, 0 0 50px rgba(255,176,32,.05); flex-shrink:0; }
+    canvas#screen { display:block; image-rendering:pixelated; width:512px; height:480px; border-radius:5px; }
+    .panel { flex:1; display:flex; flex-direction:column; gap:13px; background:var(--panel);
+      border:1px solid var(--border); border-radius:12px; padding:15px 16px; min-width:0; }
+    .panel-h { font-family:ui-monospace, Menlo, monospace; font-size:10.5px; letter-spacing:.2em; color:var(--amber); }
+    .panel-sub { color:var(--muted); font-size:11px; line-height:1.5; margin-top:-7px; }
+    .vision-row { display:flex; gap:18px; flex:1; align-items:center; justify-content:center; }
+    canvas#vision { width:140px; height:280px; image-rendering:pixelated; background:#08080a;
+      border:1px solid var(--border); border-radius:7px; flex-shrink:0; }
+    .tiles { display:flex; flex-direction:column; gap:18px; }
+    .tile { display:flex; flex-direction:column; align-items:center; gap:6px; }
+    .tile-h { font-family:ui-monospace, monospace; font-size:9.5px; letter-spacing:.12em; color:var(--muted); text-transform:uppercase; }
+    canvas#placeView, canvas#nextView { width:60px; height:60px; image-rendering:pixelated; background:#08080a;
+      border:1px solid var(--border); border-radius:7px; }
+    .levelbox { margin-top:auto; display:flex; align-items:center; justify-content:space-between;
+      background:#08080a; border:1px solid var(--border); border-radius:9px; padding:11px 16px; }
+    .lvl-label { font-family:ui-monospace, monospace; font-size:10.5px; letter-spacing:.16em; color:var(--muted); }
+    .lvl-val { font-family:ui-monospace, monospace; font-size:30px; font-weight:700; color:var(--amber);
+      font-variant-numeric:tabular-nums; line-height:1; }
+    /* footer */
+    .ctrlbar { display:flex; align-items:center; gap:9px; padding:15px 2px 3px; border-top:1px solid var(--border); flex-wrap:wrap; }
+    button, label.file { background:#17171b; color:var(--ink); border:1px solid var(--border); border-radius:9px;
+      padding:8px 14px; font-size:12px; font-weight:500; cursor:pointer; transition:border-color .15s, color .15s, box-shadow .15s; }
+    button:hover, label.file:hover { border-color:#4a4a52; }
+    button.on { border-color:var(--amber); color:var(--amber); box-shadow:inset 0 0 0 1px var(--amber); }
+    button#agent { font-weight:600; }
     input[type=file] { display:none; }
-    .status { color:var(--amber); font-size:12px; font-variant-numeric:tabular-nums; }
-    .hint { color:#666; font-size:11px; }
-    code { color:#bbb; background:#161616; padding:1px 5px; border-radius:4px; }
+    label.file input[type=checkbox] { display:inline-block; vertical-align:-1px; margin-right:5px; accent-color:var(--amber); }
+    .status { color:var(--amber); font-size:12px; font-variant-numeric:tabular-nums; margin-left:auto; }
+    .kbd { color:#56565e; font-size:11px; flex-basis:100%; padding-top:8px; }
+    code { color:#b6b6bc; background:#1a1a1f; padding:1px 6px; border-radius:5px; font-size:10.5px; }
   </style>
 </head>
 <body>
-  <h1>NES Tetris in the harness — nes-rust (accurate)</h1>
-  <div class="sub">Accurate Rust→WASM emulator with frame-stepping, framebuffer, and controller input —
-    the foundation for governing a vision-only agent. Load your own ROM; nothing is bundled or uploaded.</div>
-  <div style="display:flex; gap:22px; align-items:flex-start;">
-    <canvas id="screen" width="256" height="240"></canvas>
-    <div style="display:flex; flex-direction:column; gap:6px; align-items:center;">
-      <canvas id="vision" width="120" height="240"
-              style="background:#0e0e0e; border:1px solid var(--border); border-radius:6px;
-                     width:120px; height:240px; image-rendering:pixelated;"></canvas>
-      <div class="hint" style="max-width:130px; text-align:center;">what the agent sees —
-        the board reconstructed from pixels only (no RAM)</div>
-      <div style="display:flex; gap:16px; justify-content:center;">
-        <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-          <div class="hint">placing</div>
-          <canvas id="placeView" width="48" height="48"
-                  style="background:#0e0e0e; border:1px solid var(--border); border-radius:6px;
-                         width:48px; height:48px; image-rendering:pixelated;"></canvas>
-        </div>
-        <div style="display:flex; flex-direction:column; align-items:center; gap:4px;">
-          <div class="hint">next</div>
-          <canvas id="nextView" width="48" height="48"
-                  style="background:#0e0e0e; border:1px solid var(--border); border-radius:6px;
-                         width:48px; height:48px; image-rendering:pixelated;"></canvas>
-        </div>
+  <div class="stage">
+    <header class="topbar">
+      <div class="brand"><span class="dot"></span> JOYPAD&nbsp;HARNESS</div>
+      <div class="tag"><b>A vision-only AI plays real NES Tetris.</b> It reads the screen pixels — no RAM, no emulator hooks — and works the controller like a human.</div>
+      <div class="badges"><span class="badge">pixels only</span><span class="badge">no&nbsp;RAM</span><span class="badge">nes-rust</span></div>
+    </header>
+
+    <main class="main">
+      <div class="screen-wrap">
+        <canvas id="screen" width="256" height="240"></canvas>
       </div>
-      <div class="status" id="levelread" style="font-size:13px;">level read: —</div>
-      <div class="hint" style="max-width:140px; text-align:center;">level OCR'd from the HUD —
-        should match the LEVEL box on screen</div>
-    </div>
+      <aside class="panel">
+        <div class="panel-h">AGENT&nbsp;VISION</div>
+        <div class="panel-sub">The board, reconstructed from the framebuffer alone.</div>
+        <div class="vision-row">
+          <canvas id="vision" width="120" height="240"></canvas>
+          <div class="tiles">
+            <div class="tile"><div class="tile-h">Placing</div><canvas id="placeView" width="48" height="48"></canvas></div>
+            <div class="tile"><div class="tile-h">Next</div><canvas id="nextView" width="48" height="48"></canvas></div>
+          </div>
+        </div>
+        <div class="levelbox">
+          <span class="lvl-label">LEVEL&nbsp;READ</span>
+          <span class="lvl-val" id="levelread">—</span>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="ctrlbar">
+      <label class="file">Load ROM<input id="rom" type="file" accept=".nes" /></label>
+      <button id="agent">Start agent</button>
+      <button id="reset">Reset</button>
+      <button id="audio">🔇 Unmute</button>
+      <label class="file" title="Patch gravity so EVERY level runs at level-29 (kill-screen) speed, and engage the agent's kill-screen logic. Check it, then (re)load the ROM and start a game at any level (0-9 is fine)."><input id="killtest" type="checkbox" /> kill-speed test</label>
+      <span class="status" id="status">loading emulator…</span>
+      <span class="kbd">Manual play: <code>← → ↓</code> move · <code>↑</code> up · <code>Z</code>/<code>X</code> rotate · <code>Enter</code> Start · <code>Shift</code> Select</span>
+    </footer>
   </div>
-  <div class="bar">
-    <label class="file">Load ROM (.nes)<input id="rom" type="file" accept=".nes" /></label>
-    <button id="agent">Start agent</button>
-    <button id="reset">Reset</button>
-    <button id="audio">🔇 Unmute</button>
-    <label class="file" title="Patch gravity so EVERY level runs at level-29 (kill-screen) speed, and engage the agent's kill-screen logic. Check it, then (re)load the ROM and start a game at any level (0-9 is fine)."><input id="killtest" type="checkbox" /> 🧪 kill-speed test</label>
-    <span class="status" id="status">loading emulator…</span>
-  </div>
-  <div class="hint">Controls: ← → ↓ move · ↑ up · <code>Z</code> rotate&nbsp;A · <code>X</code> rotate&nbsp;B ·
-    <code>Enter</code> Start · <code>Shift</code> Select</div>
 
   <script type="module">
     import init, { WasmNes, Button } from "./vendor/nes_rust_wasm.js";
@@ -278,14 +311,22 @@
       // complete, WITHOUT forbidding edges (a clearly-better edge, e.g. a line clear, still
       // wins). Not a hard filter. Below 29 the weight is 0, so play is unchanged.
       const W_ACT = ks ? (typeof window.__wact === "number" ? window.__wact : 0) : 0;
+      const WR = ks ? (typeof window.__wreach === "number" ? window.__wreach : 0) : 0;
+      const rots = rotationsOf(curCells);
       let best = null;
-      for (const shape of rotationsOf(curCells)) {
+      for (let ri = 0; ri < rots.length; ri++) {
+        const shape = rots[ri];
         const maxc = Math.max(...shape.map((c) => c[1]));
         for (let ox = 0; ox < COLS - maxc; ox++) {
           const oy = dropY(board, shape, ox); if (oy === null) continue;
           const { board: b, cleared } = placeResult(board, shape, oy, ox);
           let s = scoreBoard(b, cleared, ks);
           if (W_ACT) s -= W_ACT * Math.abs(ox - 4);
+          // REACHABILITY: the piece falls ~oy rows (oy frames at 1/frame) and travels
+          // ~1 col / 2 frames. If rotations + shifts from spawn (~col 4) need more frames
+          // than the fall gives, the agent CAN'T complete it -> lands short -> hole.
+          // Penalize only that deficit (not distance), so reachable edges are unpenalized.
+          if (WR) { const margin = oy - (ri + Math.abs(ox - 4)) * 2; if (margin < 0) s += WR * margin; }
           if (!best || s > best.s) best = { s, shape, ox };
         }
       }
@@ -497,7 +538,7 @@
         if ((frames & 7) === 0) {   // render the two piece tiles (next = read from box; placing = agent's plan)
           try { const nt = nextPiece(); drawMini(nvctx, nt && SPAWN[nt] ? SPAWN[nt] : null, "#7f8c9b"); } catch (e) {}
           try { drawMini(pvctx, agent.on ? placing : null, "#FFB020"); } catch (e) {}
-          try { const lv = nesLevel(); $("levelread").textContent = "level read: " + (lv == null ? "—" : lv); } catch (e) {}
+          try { const lv = nesLevel(); $("levelread").textContent = (lv == null ? "—" : lv); } catch (e) {}
         }
         if (!agent.on && (frames & 31) === 0) $("status").textContent = "running · frame " + frames;
       }
