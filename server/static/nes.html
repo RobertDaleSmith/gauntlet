@@ -227,6 +227,34 @@
       const maxh = ks ? Math.max(...heights) : 0;
       return wa * W_AGG * agg + W_LINES * cleared + wh * W_HOLES * holes + W_BUMP * bump + wm * W_AGG * maxh;
     }
+    // Dellacherie evaluator (Pierre Dellacherie's hand-tuned 6 features — the gold-standard
+    // Tetris brain that StackRabbit builds on; clears far more than El-Tetris's 4). Scores a
+    // PLACEMENT (not just a board): landing height + eroded piece cells reward low, line-
+    // completing drops; row/column transitions + holes + cumulative wells keep the surface
+    // flat, accessible and gap-free. Returns {score, board:afterClear}. Empty-row background
+    // cancels out since we only COMPARE placements on the same board.
+    const DW = { lh:-4.500158825082766, ep:3.4181268101392694, rt:-3.2178882868487753, ct:-9.348695305445199, ho:-7.899265427351652, we:-3.3855972247263626 };
+    function dellEval(board, shape, oy, ox) {
+      const b = board.map((r) => r.slice());
+      const pieceRows = [];
+      for (const [r, c] of shape) { const R = oy + r; if (R >= 0 && R < ROWS) { b[R][ox + c] = 1; pieceRows.push(R); } }
+      const full = [];
+      for (let r = 0; r < ROWS; r++) { let f = true; for (let c = 0; c < COLS; c++) if (!b[r][c]) { f = false; break; } if (f) full.push(r); }
+      const cleared = full.length;
+      let pceInClears = 0; for (const R of pieceRows) if (full.indexOf(R) >= 0) pceInClears++;
+      const eroded = cleared * pceInClears;
+      const maxR = Math.max(...shape.map((c) => c[0]));
+      const landingHeight = (ROWS - oy) - maxR / 2;
+      let kept = b;
+      if (cleared) { kept = b.filter((_, r) => full.indexOf(r) < 0); while (kept.length < ROWS) kept.unshift(new Array(COLS).fill(0)); }
+      let rowT = 0, colT = 0, holes = 0, wells = 0;
+      for (let r = 0; r < ROWS; r++) { let prev = 1; for (let c = 0; c < COLS; c++) { const cur = kept[r][c] ? 1 : 0; if (cur !== prev) rowT++; prev = cur; } if (prev !== 1) rowT++; }
+      for (let c = 0; c < COLS; c++) { let prev = 0; for (let r = 0; r < ROWS; r++) { const cur = kept[r][c] ? 1 : 0; if (cur !== prev) colT++; prev = cur; } if (prev !== 1) colT++; }
+      for (let c = 0; c < COLS; c++) { let seen = false; for (let r = 0; r < ROWS; r++) { if (kept[r][c]) seen = true; else if (seen) holes++; } }
+      for (let c = 0; c < COLS; c++) { let depth = 0; for (let r = 0; r < ROWS; r++) { const e = !kept[r][c], lf = (c === 0) || kept[r][c - 1], rf = (c === COLS - 1) || kept[r][c + 1]; if (e && lf && rf) { depth++; wells += depth; } else depth = 0; } }
+      const score = DW.lh * landingHeight + DW.ep * eroded + DW.rt * rowT + DW.ct * colT + DW.ho * holes + DW.we * wells;
+      return { score, board: kept };
+    }
     // ---- read the NEXT piece from the preview box (pixels only) ----
     // The preview renders the upcoming piece cleanly in a fixed box, so we know the
     // next shape with CERTAINTY before it spawns — no guessing from a half-entered
@@ -306,6 +334,22 @@
     }
     window.nesLevel = nesLevel; window.nesMatchDigit = matchDigit;  // exposed for calibration/testing
 
+    // REACHABILITY (StackRabbit-style movement sim): can the piece actually NAVIGATE to this
+    // placement, or does the stack wall off the path? At the kill screen the piece falls 1
+    // row/frame and shifts ~1 col / 2 frames, so it descends ~2 rows per column of travel.
+    // Walk it from the spawn column toward ox at that rate (after the rotation fall); if its
+    // cells ever collide with the stack before arriving, the path is blocked -> unreachable.
+    // This catches BOTH walled-off tucks AND running out of fall time. ri = rotation count.
+    function reachableSim(board, shape, ox, ri) {
+      const SPAWN_COL = 4;
+      let row = ri * 2;
+      if (collides(board, shape, row, SPAWN_COL)) return false;
+      const dir = ox > SPAWN_COL ? 1 : (ox < SPAWN_COL ? -1 : 0);
+      let c = SPAWN_COL;
+      while (c !== ox) { c += dir; row += 2; if (collides(board, shape, row, c)) return false; }
+      return true;
+    }
+
     function bestPlacement(board, curCells, ks) {
       // At the kill screen, add a soft REACHABILITY cost: a piece falls 1 row/frame and
       // can only travel ~1 column per 2 frames, so far-column placements can't be reached
@@ -313,27 +357,27 @@
       // distance from the spawn column biases toward placements the agent can actually
       // complete, WITHOUT forbidding edges (a clearly-better edge, e.g. a line clear, still
       // wins). Not a hard filter. Below 29 the weight is 0, so play is unchanged.
+      const useDell = ks && window.__dell !== false;   // Dellacherie brain at the kill screen by default
+      const useReach = ks && window.__reach2 !== false;  // movement-sim reachability at the kill screen
       const W_ACT = ks ? (typeof window.__wact === "number" ? window.__wact : 0) : 0;
-      const WR = ks ? (typeof window.__wreach === "number" ? window.__wreach : 0) : 0;
       const rots = rotationsOf(curCells);
-      let best = null;
+      let best = null, bestReach = null;
       for (let ri = 0; ri < rots.length; ri++) {
         const shape = rots[ri];
         const maxc = Math.max(...shape.map((c) => c[1]));
         for (let ox = 0; ox < COLS - maxc; ox++) {
           const oy = dropY(board, shape, ox); if (oy === null) continue;
-          const { board: b, cleared } = placeResult(board, shape, oy, ox);
-          let s = scoreBoard(b, cleared, ks);
+          let s;
+          if (useDell) { s = dellEval(board, shape, oy, ox).score; }
+          else { const { board: b, cleared } = placeResult(board, shape, oy, ox); s = scoreBoard(b, cleared, ks); }
           if (W_ACT) s -= W_ACT * Math.abs(ox - 4);
-          // REACHABILITY: the piece falls ~oy rows (oy frames at 1/frame) and travels
-          // ~1 col / 2 frames. If rotations + shifts from spawn (~col 4) need more frames
-          // than the fall gives, the agent CAN'T complete it -> lands short -> hole.
-          // Penalize only that deficit (not distance), so reachable edges are unpenalized.
-          if (WR) { const margin = oy - (ri + Math.abs(ox - 4)) * 2; if (margin < 0) s += WR * margin; }
           if (!best || s > best.s) best = { s, shape, ox };
+          // Prefer the best placement the piece can actually reach; only target an unreachable
+          // one if literally nothing is reachable (a misplace is unavoidable then anyway).
+          if (useReach && reachableSim(board, shape, ox, ri)) { if (!bestReach || s > bestReach.s) bestReach = { s, shape, ox }; }
         }
       }
-      return best;
+      return (useReach && bestReach) ? bestReach : best;
     }
     // 2-PLY LOOKAHEAD (StackRabbit-style): score each current placement by the board it
     // leaves AFTER the best response with the KNOWN next piece. This is what lets a bot
@@ -341,20 +385,27 @@
     // greedily flattens and leaves gaps it can't fill. Returns the best CURRENT placement.
     // ~34*34 board evals (~1-3ms), run once per piece (in the burst), not per tick.
     function bestPlacement2(board, curCells, nextCells, ks) {
+      const useDell = ks && window.__dell !== false;
+      const useReach = ks && window.__reach2 !== false;
       const W_ACT = ks ? (typeof window.__wact === "number" ? window.__wact : 0) : 0;
-      let best = null;
-      for (const shape of rotationsOf(curCells)) {
+      const rots = rotationsOf(curCells);
+      let best = null, bestReach = null;
+      for (let ri = 0; ri < rots.length; ri++) {
+        const shape = rots[ri];
         const maxc = Math.max(...shape.map((c) => c[1]));
         for (let ox = 0; ox < COLS - maxc; ox++) {
           const oy = dropY(board, shape, ox); if (oy === null) continue;
-          const { board: b1, cleared: c1 } = placeResult(board, shape, oy, ox);
-          const resp = bestPlacement(b1, nextCells, ks);          // best response with the next piece
-          let s = W_LINES * c1 + (resp ? resp.s : scoreBoard(b1, c1, ks));  // total lines + resulting 2-piece board
+          let curS, b1;
+          if (useDell) { const e = dellEval(board, shape, oy, ox); curS = e.score; b1 = e.board; }
+          else { const r = placeResult(board, shape, oy, ox); b1 = r.board; curS = W_LINES * r.cleared; }
+          const resp = bestPlacement(b1, nextCells, ks);          // best response with the next piece on b1
+          let s = curS + (resp ? resp.s : 0);                      // this placement + the best follow-up
           if (W_ACT) s -= W_ACT * Math.abs(ox - 4);
           if (!best || s > best.s) best = { s, shape, ox };
+          if (useReach && reachableSim(board, shape, ox, ri)) { if (!bestReach || s > bestReach.s) bestReach = { s, shape, ox }; }
         }
       }
-      return best;
+      return (useReach && bestReach) ? bestReach : best;
     }
     // One controller button toward the chosen placement (re-evaluated each tick).
     function heuristicButton(board, curCells) {
@@ -461,12 +512,17 @@
           // budget the agent can't spare, so on a new piece fire ALL planned rotations +
           // shifts back-to-back (tracking position, no vision between), then soft-drop. The
           // next tick re-perceives and the reactive branches correct any miss. Gated to 29.
-          if (ks && !window.__noburst && burstOx != null) {
-            let cx = Math.min(...current.map((c) => c[1])), gx = cx;
+          if (ks && !window.__noburst && burstOx != null) {   // burst ON: with the reachability filter the path is clear, so open-loop taps land reliably
             const bt = window.__acc === false ? ((b) => tapBtn(b, 1)) : tapAcc;   // frame-accurate burst by default
+            // Wait for the piece to be FULLY visible before reading its column — a partial
+            // (still-spawning) read is off by ~1 and the whole burst inherits that error.
+            let cur2 = current, w = 0;
+            while (cur2 && cur2.length < 4 && w++ < 5 && agent.on) { await nextFrames(1); cur2 = vision().current; }
+            if (!cur2 || !cur2.length) { continue; }
+            let cx = Math.min(...cur2.map((c) => c[1])), gx = cx;
             for (let r = 0; r < rotsNeeded && agent.on; r++) { nes.release_button(DOWN); await bt("ROTATE"); }
             rotsDone = rotsNeeded;
-            const vr = vision().current; if (vr && vr.length) cx = Math.min(...vr.map((c) => c[1]));  // rotation moves the bbox -> re-read the real column before shifting
+            const vr = vision().current; if (vr && vr.length >= 4) cx = Math.min(...vr.map((c) => c[1]));  // rotation moves the bbox -> re-read the real column
             let guard = 0;
             while (cx !== burstOx && guard++ < 10 && agent.on) { const d = cx < burstOx ? 1 : -1; nes.release_button(DOWN); await bt(d > 0 ? "RIGHT" : "LEFT"); cx += d; }
             nes.press_button(DOWN);
@@ -488,16 +544,16 @@
         // = 2 frames/move (the NES hard floor), vs hold=2's 3 frames. At 1 row/frame that's
         // the difference between a piece dropping 2 rows per column vs 3 — enough to actually
         // reach the outer columns before it lands. Below 29, hold=2 (proven, unchanged).
-        const H = ks ? 1 : 2;
-        // KILL SCREEN ONLY: rotate immediately on the partial view using the pre-planned
-        // count (don't wait for the full render — at 29 the piece has already dropped 3-4
-        // rows by then, eating the travel budget). Below 29 this never fires, so play is
-        // byte-identical to the proven driver; and the clear branch below is still the
-        // ground-truth that corrects any wrong cached identity once the piece is fully seen.
-        if (ks && rotsDone < rotsNeeded) { nes.release_button(DOWN); rotsDone++; dbgRot++; await tapBtn("ROTATE", H); }   // kill: rotate by COUNT, trust it (no re-verify -> no over-rotation from stale reads)
-        else if (!ks && clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); dbgRot++; await tapBtn("ROTATE", H); }   // sub-29: reactive comparison (unchanged)
-        else if (curX < best.ox) { nes.release_button(DOWN); dbgShift++; await tapBtn("RIGHT", H); }
-        else if (curX > best.ox) { nes.release_button(DOWN); dbgShift++; await tapBtn("LEFT", H); }
+        // At the kill screen every tap is FRAME-ACCURATE (tapAcc, guaranteed to register) and
+        // CLOSED-LOOP — the loop re-perceives the real column each tick, so a missed/blocked
+        // tap is simply re-issued, never silently lost (the open-loop burst's failure mode).
+        // Rotation is still by COUNT (no stale-read re-verify -> no over-rotation). Below 29:
+        // unchanged reactive driver (tapBtn, hold=2).
+        const kt = (b) => (ks ? tapAcc(b) : tapBtn(b, 2));
+        if (ks && rotsDone < rotsNeeded) { nes.release_button(DOWN); rotsDone++; dbgRot++; await kt("ROTATE"); }
+        else if (!ks && clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); dbgRot++; await kt("ROTATE"); }
+        else if (curX < best.ox) { nes.release_button(DOWN); dbgShift++; await kt("RIGHT"); }
+        else if (curX > best.ox) { nes.release_button(DOWN); dbgShift++; await kt("LEFT"); }
         else if (clear) { nes.press_button(DOWN); await sleepFrames(2); }
         else { await sleepFrames(1); }
       }
