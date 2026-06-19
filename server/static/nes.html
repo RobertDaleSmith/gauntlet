@@ -512,7 +512,7 @@
           // budget the agent can't spare, so on a new piece fire ALL planned rotations +
           // shifts back-to-back (tracking position, no vision between), then soft-drop. The
           // next tick re-perceives and the reactive branches correct any miss. Gated to 29.
-          if (ks && !window.__noburst && burstOx != null) {   // burst ON: with the reachability filter the path is clear, so open-loop taps land reliably
+          if (ks && !window.__noburst && burstOx != null) {   // open-loop burst (best measured execution: ~83% reach)
             const bt = window.__acc === false ? ((b) => tapBtn(b, 1)) : tapAcc;   // frame-accurate burst by default
             // Wait for the piece to be FULLY visible before reading its column — a partial
             // (still-spawning) read is off by ~1 and the whole burst inherits that error.
@@ -524,7 +524,14 @@
             rotsDone = rotsNeeded;
             const vr = vision().current; if (vr && vr.length >= 4) cx = Math.min(...vr.map((c) => c[1]));  // rotation moves the bbox -> re-read the real column
             let guard = 0;
-            while (cx !== burstOx && guard++ < 10 && agent.on) { const d = cx < burstOx ? 1 : -1; nes.release_button(DOWN); await bt(d > 0 ? "RIGHT" : "LEFT"); cx += d; }
+            while (cx !== burstOx && guard++ < 10 && agent.on) {
+              const d = cx < burstOx ? 1 : -1;
+              let before = null;
+              if (window.__dbg) { const v = vision().current; if (v && v.length) before = Math.min(...v.map((c) => c[1])); }
+              nes.release_button(DOWN); await bt(d > 0 ? "RIGHT" : "LEFT");
+              if (window.__dbg) { const v = vision().current; const after = (v && v.length) ? Math.min(...v.map((c) => c[1])) : null; (window.__taplog || (window.__taplog = [])).push([before, after, d]); }
+              cx += d;
+            }
             nes.press_button(DOWN);
             if (window.__dbg) { dbgTgt = burstOx; dbgX = cx; dbgRot = rotsNeeded; dbgShift = Math.abs(cx - gx); }
             continue;
@@ -549,7 +556,7 @@
         // tap is simply re-issued, never silently lost (the open-loop burst's failure mode).
         // Rotation is still by COUNT (no stale-read re-verify -> no over-rotation). Below 29:
         // unchanged reactive driver (tapBtn, hold=2).
-        const kt = (b) => (ks ? tapAcc(b) : tapBtn(b, 2));
+        const kt = (b) => (ks ? tapAcc(b) : tapBtn(b, 2));   // kill screen: frame-accurate correction after the burst
         if (ks && rotsDone < rotsNeeded) { nes.release_button(DOWN); rotsDone++; dbgRot++; await kt("ROTATE"); }
         else if (!ks && clear && keyStr(normKey(current)) !== keyStr(best.shape)) { nes.release_button(DOWN); dbgRot++; await kt("ROTATE"); }
         else if (curX < best.ox) { nes.release_button(DOWN); dbgShift++; await kt("RIGHT"); }
